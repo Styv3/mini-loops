@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Loops MVP</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+
+<!-- Lightbox -->
+<div id="lightbox">
+  <div class="lb-inner">
+    <img id="lb-img" src="" alt="" />
+    <div class="lb-bar">
+      <span id="lb-label"></span>
+      <div style="display:flex;gap:8px;">
+        <button id="lb-dl" class="btn btn-secondary btn-sm">↓ Télécharger</button>
+        <button id="lb-close" class="btn btn-secondary btn-sm">✕ Fermer</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<header>
+  <div class="logo">loops<span>.</span></div>
+  <nav>
+    <button data-page="generate" class="active">Générer</button>
+    <button data-page="analyze">Analyse</button>
+  </nav>
+  <div class="header-right">
+    <div id="health-dot" class="health-dot" title="Vérification…"></div>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- PAGE: GENERATE -->
+  <div id="page-generate" class="page active">
+    <div class="layout">
+
+      <!-- LEFT: Brand config -->
+      <div>
+        <div class="card">
+          <h3>Configuration de la marque</h3>
+
+          <div class="field">
+            <label>Nom de la marque</label>
+            <input type="text" id="brand-name" placeholder="Ex: GlowSkin" value="GlowSkin" />
+          </div>
+
+          <div class="field">
+            <label>Secteur</label>
+            <select id="sector">
+              <option value="beaute">Beauté</option>
+              <option value="ecommerce">E-commerce</option>
+              <option value="sante">Santé</option>
+              <option value="autre">Autre</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Tagline / Hook</label>
+            <input type="text" id="tagline" placeholder="Ex: 90% saw results in 30 days" />
+          </div>
+
+          <div class="field">
+            <label>Description courte</label>
+            <textarea id="description" placeholder="Description du produit en 1-2 phrases."></textarea>
+          </div>
+
+          <div class="field">
+            <label>Call to action</label>
+            <input type="text" id="cta" placeholder="Ex: Shop Now" />
+          </div>
+
+          <div class="field">
+            <label>Couleurs</label>
+            <div class="color-row">
+              <div class="color-field">
+                <input type="color" id="primary-color" value="#1a1a2e" />
+                <input type="text" id="primary-hex" value="#1a1a2e" maxlength="7" />
+              </div>
+              <div class="color-field">
+                <input type="color" id="secondary-color" value="#e94560" />
+                <input type="text" id="secondary-hex" value="#e94560" maxlength="7" />
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Formats</label>
+            <div id="format-grid" class="format-grid"></div>
+          </div>
+
+          <div class="field">
+            <label>Source des images</label>
+            <div class="source-grid" id="source-grid">
+              <div class="source-btn selected" data-source="none">
+                <span class="source-icon">◻</span>
+                <span class="source-label">Couleurs</span>
+                <span class="source-desc">Rapide</span>
+              </div>
+              <div class="source-btn" data-source="stock">
+                <span class="source-icon">🖼</span>
+                <span class="source-label">Stock</span>
+                <span class="source-desc">Flickr</span>
+              </div>
+              <div class="source-btn" data-source="ai">
+                <span class="source-icon">✦</span>
+                <span class="source-label">IA</span>
+                <span class="source-desc">~20s / pub</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:8px;margin-top:8px;">
+            <button class="btn btn-secondary btn-sm" id="btn-suggest" style="flex:1;">
+              ✦ Suggérer un copy
+            </button>
+          </div>
+
+          <div style="margin-top:12px;">
+            <button class="btn btn-primary" id="btn-generate">Générer les publicités</button>
+          </div>
+
+          <div id="gen-status" class="status" style="display:none;"></div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Generated ads -->
+      <div>
+        <div class="section-header">
+          <h2>Visuels générés</h2>
+          <button id="btn-download-all" class="btn btn-secondary btn-sm" style="display:none;">
+            ↓ Tout télécharger
+          </button>
+        </div>
+
+        <div id="ads-grid">
+          <div class="empty-state">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="3" y="3" width="18" height="18" rx="2"/>
+              <circle cx="8.5" cy="8.5" r="1.5"/>
+              <polyline points="21 15 16 10 5 21"/>
+            </svg>
+            <p>Configure ta marque et clique sur<br/><strong>Générer les publicités</strong></p>
+          </div>
+        </div>
+
+        <!-- History -->
+        <div id="history-section" style="display:none;margin-top:28px;">
+          <div class="section-header">
+            <h2>Historique de session</h2>
+          </div>
+          <div id="history-list" class="history-list"></div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- PAGE: ANALYZE -->
+  <div id="page-analyze" class="page">
+    <div class="section-header">
+      <h2>Analyse de marché</h2>
+      <button class="btn btn-secondary btn-sm" id="btn-analyze-refresh">↺ Rafraîchir</button>
+    </div>
+    <div id="analyze-status" class="status" style="display:none;"></div>
+    <div id="analysis-container">
+      <div class="empty-state">
+        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+        </svg>
+        <p>Chargement en cours…</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
