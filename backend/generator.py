@@ -3,6 +3,7 @@ import io
 import urllib.request
 import urllib.parse
 import random
+import glob as _glob
 
 AD_FORMATS = {
     "feed":   (1080, 1080),
@@ -43,10 +44,35 @@ def _contrast_color(bg_rgb: tuple) -> tuple:
     return (15, 15, 15) if _luminance(bg_rgb) > 128 else (245, 245, 245)
 
 
-def _load_font(size: int):
-    for name in ("arialbd.ttf", "arial.ttf", "DejaVuSans-Bold.ttf", "DejaVuSans.ttf"):
+def _find_system_font() -> str | None:
+    """Locate a usable TTF font on Windows, Linux, or Nix environments."""
+    direct = ["arialbd.ttf", "arial.ttf", "DejaVuSans-Bold.ttf", "DejaVuSans.ttf"]
+    for name in direct:
         try:
-            return ImageFont.truetype(name, size)
+            ImageFont.truetype(name, 12)
+            return name
+        except Exception:
+            pass
+    patterns = [
+        "/nix/store/*/share/fonts/truetype/DejaVuSans-Bold.ttf",
+        "/nix/store/*/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+    ]
+    for pattern in patterns:
+        matches = _glob.glob(pattern)
+        if matches:
+            return matches[0]
+    return None
+
+_SYSTEM_FONT = _find_system_font()
+
+
+def _load_font(size: int):
+    if _SYSTEM_FONT:
+        try:
+            return ImageFont.truetype(_SYSTEM_FONT, size)
         except Exception:
             pass
     return ImageFont.load_default()
