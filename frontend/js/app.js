@@ -1,4 +1,5 @@
 const API = window.API_URL || "http://localhost:8765";
+const SUPABASE_OK = !!(window.SUPABASE_URL && !window.SUPABASE_URL.includes("VOTRE-PROJET"));
 
 const state = {
   formats: ["feed", "story", "banner"],
@@ -6,11 +7,19 @@ const state = {
   imageSource: "none",
   ads: [],
   analysis: null,
-  history: [], // last 3 sessions [{ads, config, source, ts}]
+  history: [],
 };
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
+
+// ---------------------------------------------------------------------------
+// Navigation
+// ---------------------------------------------------------------------------
+function showPage(name) {
+  $$(".page").forEach(p => p.classList.toggle("active", p.id === `page-${name}`));
+  $$("nav button").forEach(b => b.classList.toggle("active", b.dataset.page === name));
+}
 
 // ---------------------------------------------------------------------------
 // Backend health check
@@ -25,7 +34,7 @@ async function checkHealth() {
     } else throw new Error();
   } catch {
     dot.className = "health-dot offline";
-    dot.title = "Backend hors ligne — lance start.ps1";
+    dot.title = "Backend hors ligne";
   }
 }
 
@@ -36,47 +45,72 @@ const LS_KEY = "loops_brand_config";
 
 function saveBrandConfig() {
   const cfg = {
-    brand_name: $("#brand-name").value,
-    tagline: $("#tagline").value,
-    description: $("#description").value,
-    cta: $("#cta").value,
-    primary_color: $("#primary-hex").value,
+    brand_name:      $("#brand-name").value,
+    tagline:         $("#tagline").value,
+    description:     $("#description").value,
+    cta:             $("#cta").value,
+    primary_color:   $("#primary-hex").value,
     secondary_color: $("#secondary-hex").value,
-    sector: $("#sector").value,
+    sector:          $("#sector").value,
     selectedFormats: state.selectedFormats,
-    imageSource: state.imageSource,
+    imageSource:     state.imageSource,
   };
   localStorage.setItem(LS_KEY, JSON.stringify(cfg));
+  if (SUPABASE_OK) scheduleBrandConfigDBSave();
 }
 
 function loadBrandConfig() {
   const raw = localStorage.getItem(LS_KEY);
   if (!raw) return;
-  try {
-    const cfg = JSON.parse(raw);
-    if (cfg.brand_name)    $("#brand-name").value    = cfg.brand_name;
-    if (cfg.tagline)       $("#tagline").value        = cfg.tagline;
-    if (cfg.description)   $("#description").value    = cfg.description;
-    if (cfg.cta)           $("#cta").value            = cfg.cta;
-    if (cfg.sector)        $("#sector").value         = cfg.sector;
-    if (cfg.primary_color) {
-      $("#primary-hex").value   = cfg.primary_color;
-      $("#primary-color").value = cfg.primary_color;
-    }
-    if (cfg.secondary_color) {
-      $("#secondary-hex").value   = cfg.secondary_color;
-      $("#secondary-color").value = cfg.secondary_color;
-    }
-    if (cfg.selectedFormats) {
-      state.selectedFormats = cfg.selectedFormats;
-    }
-    if (cfg.imageSource) {
-      state.imageSource = cfg.imageSource;
-      $$(".source-btn").forEach((b) => {
-        b.classList.toggle("selected", b.dataset.source === cfg.imageSource);
-      });
-    }
-  } catch {}
+  try { applyConfig(JSON.parse(raw)); } catch {}
+}
+
+function applyConfig(cfg) {
+  if (cfg.brand_name)    $("#brand-name").value    = cfg.brand_name;
+  if (cfg.tagline)       $("#tagline").value        = cfg.tagline;
+  if (cfg.description)   $("#description").value    = cfg.description;
+  if (cfg.cta)           $("#cta").value            = cfg.cta;
+  if (cfg.sector)        $("#sector").value         = cfg.sector;
+  if (cfg.primary_color || cfg.primary_colour) {
+    const c = cfg.primary_color || cfg.primary_colour;
+    $("#primary-hex").value   = c;
+    $("#primary-color").value = c;
+  }
+  if (cfg.secondary_color || cfg.secondary_colour) {
+    const c = cfg.secondary_color || cfg.secondary_colour;
+    $("#secondary-hex").value   = c;
+    $("#secondary-color").value = c;
+  }
+  if (cfg.selected_formats || cfg.selectedFormats) {
+    state.selectedFormats = cfg.selected_formats || cfg.selectedFormats;
+    initFormatButtons();
+  }
+  if (cfg.image_source || cfg.imageSource) {
+    state.imageSource = cfg.image_source || cfg.imageSource;
+    $$(".source-btn").forEach(b => b.classList.toggle("selected", b.dataset.source === state.imageSource));
+  }
+}
+
+// ---------------------------------------------------------------------------
+// DB debounce (Supabase brand config save)
+// ---------------------------------------------------------------------------
+let _dbSaveTimer = null;
+function scheduleBrandConfigDBSave() {
+  clearTimeout(_dbSaveTimer);
+  _dbSaveTimer = setTimeout(() => {
+    const cfg = getBrandConfig();
+    dbSaveBrandConfig({
+      brand_name:      cfg.brand_name,
+      tagline:         cfg.tagline,
+      description:     cfg.description,
+      cta:             cfg.cta,
+      primary_color:   cfg.primary_color,
+      secondary_color: cfg.secondary_color,
+      sector:          cfg.sector,
+      selected_formats: state.selectedFormats,
+      image_source:    state.imageSource,
+    }).catch(console.error);
+  }, 2000);
 }
 
 // ---------------------------------------------------------------------------
@@ -180,10 +214,10 @@ function showProgress(container, total) {
 // ---------------------------------------------------------------------------
 function getBrandConfig() {
   return {
-    brand_name:      $("#brand-name").value.trim()   || "My Brand",
-    tagline:         $("#tagline").value.trim()       || "Your tagline here",
-    description:     $("#description").value.trim()  || "Short product description.",
-    cta:             $("#cta").value.trim()           || "Shop Now",
+    brand_name:      $("#brand-name").value.trim()  || "My Brand",
+    tagline:         $("#tagline").value.trim()      || "Your tagline here",
+    description:     $("#description").value.trim() || "Short product description.",
+    cta:             $("#cta").value.trim()          || "Shop Now",
     primary_color:   $("#primary-hex").value,
     secondary_color: $("#secondary-hex").value,
     sector:          $("#sector").value,
@@ -200,7 +234,7 @@ function setStatus(el, msg, type) {
 }
 
 // ---------------------------------------------------------------------------
-// Notification (replaces alert)
+// Toast notification
 // ---------------------------------------------------------------------------
 function notify(msg, type = "loading") {
   let toast = $("#toast");
@@ -275,6 +309,8 @@ async function generateAds() {
     setStatus(status, "", "");
     $("#btn-download-all").style.display = state.ads.length > 1 ? "inline-flex" : "none";
     if (progress) { progress.update(totalAds, "Terminé !"); setTimeout(() => progress.hide(), 2000); }
+
+    if (SUPABASE_OK) dbSaveAds(state.ads, config).catch(console.error);
   } catch (err) {
     const msg = err.name === "AbortError"
       ? "Timeout dépassé — essaie avec moins de formats."
@@ -339,7 +375,7 @@ function downloadAll() {
 }
 
 // ---------------------------------------------------------------------------
-// History (last 3 sessions, in-memory)
+// In-memory session history
 // ---------------------------------------------------------------------------
 function pushHistory(ads, config) {
   state.history.unshift({ ads, config, source: state.imageSource, ts: Date.now() });
@@ -381,6 +417,40 @@ function restoreSession(index) {
 }
 
 // ---------------------------------------------------------------------------
+// DB history (Supabase — chargé au login)
+// ---------------------------------------------------------------------------
+function renderDBHistory(dbAds) {
+  if (!dbAds.length) return;
+  const section = $("#history-section");
+  section.style.display = "block";
+
+  const list = $("#history-list");
+
+  const sep = document.createElement("div");
+  sep.className = "section-header";
+  sep.style.cssText = "margin-top:20px;padding-top:16px;border-top:1px solid var(--border);";
+  sep.innerHTML = `<h2 style="font-size:0.85rem;color:var(--text-muted);">Créations sauvegardées</h2>`;
+  list.appendChild(sep);
+
+  dbAds.forEach(ad => {
+    const date = new Date(ad.created_at).toLocaleDateString("fr-FR", {
+      day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit",
+    });
+    const row = document.createElement("div");
+    row.className = "history-row";
+    row.innerHTML = `
+      <div class="history-meta">
+        <strong>${ad.brand_name || "Sans nom"}</strong>
+        <span>${date} · ${SOURCE_LABELS[ad.source] || ad.source} · ${ad.format}</span>
+      </div>
+      <img class="history-thumb" src="${ad.image_url}" alt="${ad.format}" />
+      <a href="${ad.image_url}" download="${ad.brand_name || "loops"}-${ad.format}.png"
+         class="btn btn-secondary btn-sm">↓</a>`;
+    list.appendChild(row);
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Analysis
 // ---------------------------------------------------------------------------
 async function loadAnalysis() {
@@ -410,10 +480,10 @@ async function loadAnalysis() {
 
 function renderAnalysis(data) {
   const container = $("#analysis-container");
-  const hooksHtml   = data.top_hooks.map((h) => `<span class="tag">${h}</span>`).join("");
-  const ctasHtml    = data.top_ctas.map((c) => `<span class="tag">${c}</span>`).join("");
+  const hooksHtml    = data.top_hooks.map((h) => `<span class="tag">${h}</span>`).join("");
+  const ctasHtml     = data.top_ctas.map((c) => `<span class="tag">${c}</span>`).join("");
   const insightsHtml = data.insights.map((i) => `<li>${i}</li>`).join("");
-  const compsHtml   = data.competitor_ads.map((c) => `
+  const compsHtml    = data.competitor_ads.map((c) => `
     <tr>
       <td>${c.brand}</td>
       <td>${c.hook}</td>
@@ -473,25 +543,110 @@ async function suggestCopy() {
 }
 
 // ---------------------------------------------------------------------------
-// Init
+// Auth UI helpers
 // ---------------------------------------------------------------------------
-document.addEventListener("DOMContentLoaded", () => {
-  initFormatButtons();
-  syncColor($("#primary-color"), $("#primary-hex"));
-  syncColor($("#secondary-color"), $("#secondary-hex"));
-  initSourceButtons();
+function showApp(user) {
+  $("#auth-overlay").style.display = "none";
+  $("#app-root").style.display = "";
+
+  const userEl = $("#header-user");
+  userEl.innerHTML = `
+    <span class="user-email">${user.email}</span>
+    <button class="btn btn-secondary btn-sm" id="btn-logout">Déconnexion</button>`;
+  $("#btn-logout").addEventListener("click", async () => {
+    await authSignOut();
+  });
+
+  if (!window._appInitialized) {
+    window._appInitialized = true;
+    initApp();
+  }
+}
+
+function showAuthOverlay() {
+  $("#auth-overlay").style.display = "flex";
+  $("#app-root").style.display = "none";
+}
+
+async function loadUserData() {
+  try {
+    const cfg = await dbLoadBrandConfig();
+    if (cfg) applyConfig(cfg);
+  } catch (e) { console.error("[db] load config:", e); }
+
+  try {
+    const recentAds = await dbLoadRecentAds();
+    if (recentAds.length) renderDBHistory(recentAds);
+  } catch (e) { console.error("[db] load ads:", e); }
+}
+
+function setupAuthForm() {
+  let mode = "login";
+
+  $$(".auth-tab").forEach(tab => {
+    tab.addEventListener("click", () => {
+      mode = tab.dataset.tab;
+      $$(".auth-tab").forEach(t => t.classList.toggle("active", t.dataset.tab === mode));
+      $("#auth-submit").textContent = mode === "login" ? "Se connecter" : "Créer un compte";
+      $("#auth-error").textContent = "";
+    });
+  });
+
+  $("#auth-submit").addEventListener("click", async () => {
+    const email    = $("#auth-email").value.trim();
+    const password = $("#auth-password").value;
+    const errEl    = $("#auth-error");
+    const btn      = $("#auth-submit");
+
+    if (!email || !password) { errEl.textContent = "Email et mot de passe requis."; return; }
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>';
+    errEl.textContent = "";
+
+    try {
+      if (mode === "login") {
+        await authSignIn(email, password);
+      } else {
+        const result = await authSignUp(email, password);
+        if (!result.session) {
+          errEl.style.color = "#4ade80";
+          errEl.textContent = "Compte créé ! Vérifiez votre email pour confirmer.";
+          btn.disabled = false;
+          btn.textContent = "Créer un compte";
+          return;
+        }
+      }
+    } catch (err) {
+      errEl.style.color = "#f87171";
+      errEl.textContent = err.message;
+      btn.disabled = false;
+      btn.textContent = mode === "login" ? "Se connecter" : "Créer un compte";
+    }
+  });
+
+  ["auth-email", "auth-password"].forEach(id => {
+    $(`#${id}`).addEventListener("keydown", e => {
+      if (e.key === "Enter") $("#auth-submit").click();
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Core app init (called after auth)
+// ---------------------------------------------------------------------------
+function initApp() {
   loadBrandConfig();
-  initFormatButtons(); // re-init after config load to reflect saved formats
+  initFormatButtons();
   checkHealth();
   setInterval(checkHealth, 30000);
 
-  // Auto-save on input
-  ["brand-name", "tagline", "description", "cta"].forEach((id) => {
+  ["brand-name", "tagline", "description", "cta"].forEach(id => {
     $(`#${id}`).addEventListener("input", saveBrandConfig);
   });
   $("#sector").addEventListener("change", saveBrandConfig);
 
-  $$("nav button").forEach((btn) => {
+  $$("nav button").forEach(btn => {
     btn.addEventListener("click", () => {
       showPage(btn.dataset.page);
       if (btn.dataset.page === "analyze") loadAnalysis();
@@ -503,11 +658,37 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#btn-download-all").addEventListener("click", downloadAll);
   $("#btn-analyze-refresh").addEventListener("click", loadAnalysis);
 
-  // Lightbox close
-  $("#lightbox").addEventListener("click", (e) => {
+  $("#lightbox").addEventListener("click", e => {
     if (e.target === $("#lightbox") || e.target.id === "lb-close") closeLightbox();
   });
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeLightbox(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape") closeLightbox(); });
 
   showPage("generate");
+}
+
+// ---------------------------------------------------------------------------
+// Bootstrap
+// ---------------------------------------------------------------------------
+document.addEventListener("DOMContentLoaded", () => {
+  initFormatButtons();
+  syncColor($("#primary-color"), $("#primary-hex"));
+  syncColor($("#secondary-color"), $("#secondary-hex"));
+  initSourceButtons();
+
+  if (SUPABASE_OK) {
+    setupAuthForm();
+    initAuth(
+      async (user) => {
+        showApp(user);
+        await loadUserData();
+      },
+      () => showAuthOverlay()
+    );
+  } else {
+    // Pas de Supabase configuré — mode sans auth
+    $("#auth-overlay").style.display = "none";
+    $("#app-root").style.display = "";
+    window._appInitialized = true;
+    initApp();
+  }
 });

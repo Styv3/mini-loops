@@ -8,6 +8,25 @@
 </head>
 <body>
 
+<!-- Auth overlay -->
+<div id="auth-overlay" class="auth-overlay" style="display:none;">
+  <div class="auth-card">
+    <div class="logo" style="margin-bottom:24px;font-size:1.8rem;">loops<span>.</span></div>
+    <h2 class="auth-title">Bienvenue</h2>
+    <p class="auth-sub">Connecte-toi pour sauvegarder tes créations</p>
+    <div class="auth-tabs">
+      <button class="auth-tab active" data-tab="login">Connexion</button>
+      <button class="auth-tab" data-tab="signup">Inscription</button>
+    </div>
+    <div class="auth-form">
+      <input type="email" id="auth-email" placeholder="Email" autocomplete="email" />
+      <input type="password" id="auth-password" placeholder="Mot de passe" autocomplete="current-password" />
+      <button class="btn btn-primary" id="auth-submit">Se connecter</button>
+      <div id="auth-error" class="auth-error"></div>
+    </div>
+  </div>
+</div>
+
 <!-- Lightbox -->
 <div id="lightbox">
   <div class="lb-inner">
@@ -22,6 +41,7 @@
   </div>
 </div>
 
+<div id="app-root" style="display:none;">
 <header>
   <div class="logo">loops<span>.</span></div>
   <nav>
@@ -29,6 +49,7 @@
     <button data-page="analyze">Analyse</button>
   </nav>
   <div class="header-right">
+    <div id="header-user"></div>
     <div id="health-dot" class="health-dot" title="Vérification…"></div>
   </div>
 </header>
@@ -178,8 +199,12 @@
   </div>
 
 </div>
+</div><!-- /app-root -->
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="js/config.js"></script>
+<script src="js/auth.js"></script>
+<script src="js/db.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
