@@ -75,7 +75,11 @@ def _load_font(size: int):
             return ImageFont.truetype(_SYSTEM_FONT, size)
         except Exception:
             pass
-    return ImageFont.load_default()
+    # Pillow ≥10.1 : load_default accepte un paramètre size (vrai vecteur)
+    try:
+        return ImageFont.load_default(size=size)
+    except TypeError:
+        return ImageFont.load_default()
 
 
 def _wrap_text(text: str, font, max_width: int, draw: ImageDraw) -> list[str]:

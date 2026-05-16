@@ -43,6 +43,12 @@ def root():
     return {"status": "ok", "service": "Loops MVP"}
 
 
+@app.get("/debug/font")
+def debug_font():
+    from generator import _SYSTEM_FONT
+    return {"system_font": _SYSTEM_FONT}
+
+
 @app.get("/formats")
 def list_formats():
     return [{"key": k, "width": v[0], "height": v[1]} for k, v in AD_FORMATS.items()]
