@@ -14,14 +14,17 @@
     <div class="logo" style="margin-bottom:24px;font-size:1.8rem;">loops<span>.</span></div>
     <h2 class="auth-title">Bienvenue</h2>
     <p class="auth-sub">Connecte-toi pour sauvegarder tes créations</p>
-    <div class="auth-tabs">
+    <div class="auth-tabs" id="auth-tabs-wrap">
       <button class="auth-tab active" data-tab="login">Connexion</button>
       <button class="auth-tab" data-tab="signup">Inscription</button>
     </div>
     <div class="auth-form">
       <input type="email" id="auth-email" placeholder="Email" autocomplete="email" />
       <input type="password" id="auth-password" placeholder="Mot de passe" autocomplete="current-password" />
+      <input type="password" id="auth-new-password" placeholder="Nouveau mot de passe" autocomplete="new-password" style="display:none;" />
       <button class="btn btn-primary" id="auth-submit">Se connecter</button>
+      <a href="#" id="auth-forgot" class="auth-link">Mot de passe oublié ?</a>
+      <a href="#" id="auth-back" class="auth-link" style="display:none;">← Retour à la connexion</a>
       <div id="auth-error" class="auth-error"></div>
     </div>
   </div>

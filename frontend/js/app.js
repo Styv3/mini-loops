@@ -269,12 +269,12 @@ async function generateAds() {
   const payload = {
     ...config,
     formats: state.selectedFormats,
-    variants_per_format: 2,
+    variants_per_format: 1,
     image_source: state.imageSource,
   };
 
   const isAI = state.imageSource === "ai";
-  const totalAds = state.selectedFormats.length * 2;
+  const totalAds = state.selectedFormats.length;
   const timeoutMs = isAI ? totalAds * 55000 : 30000;
 
   let progress = null;
@@ -581,15 +581,56 @@ async function loadUserData() {
 }
 
 function setupAuthForm() {
-  let mode = "login";
+  let mode = "login"; // login | signup | forgot | recovery
+
+  const LABELS = {
+    login:    "Se connecter",
+    signup:   "Créer un compte",
+    forgot:   "Envoyer le lien",
+    recovery: "Définir le mot de passe",
+  };
+
+  function setMode(newMode) {
+    mode = newMode;
+    const isForgot   = mode === "forgot";
+    const isRecovery = mode === "recovery";
+
+    $("#auth-tabs-wrap").style.display      = (isForgot || isRecovery) ? "none" : "";
+    $("#auth-password").style.display       = isRecovery ? "none" : "";
+    $("#auth-new-password").style.display   = isRecovery ? "" : "none";
+    $("#auth-forgot").style.display         = (isForgot || isRecovery) ? "none" : "";
+    $("#auth-back").style.display           = isForgot ? "" : "none";
+    $("#auth-submit").textContent           = LABELS[mode];
+    $("#auth-error").textContent            = "";
+    $("#auth-error").style.color            = "#f87171";
+
+    if (isForgot) {
+      $(".auth-title").textContent = "Mot de passe oublié";
+      $(".auth-sub").textContent   = "Entre ton email pour recevoir un lien de réinitialisation.";
+    } else if (isRecovery) {
+      $(".auth-title").textContent = "Nouveau mot de passe";
+      $(".auth-sub").textContent   = "Choisis un nouveau mot de passe pour ton compte.";
+    } else {
+      $(".auth-title").textContent = "Bienvenue";
+      $(".auth-sub").textContent   = "Connecte-toi pour sauvegarder tes créations";
+      $$(".auth-tab").forEach(t => t.classList.toggle("active", t.dataset.tab === mode));
+    }
+  }
+
+  window._setAuthMode = setMode;
 
   $$(".auth-tab").forEach(tab => {
-    tab.addEventListener("click", () => {
-      mode = tab.dataset.tab;
-      $$(".auth-tab").forEach(t => t.classList.toggle("active", t.dataset.tab === mode));
-      $("#auth-submit").textContent = mode === "login" ? "Se connecter" : "Créer un compte";
-      $("#auth-error").textContent = "";
-    });
+    tab.addEventListener("click", () => setMode(tab.dataset.tab));
+  });
+
+  $("#auth-forgot").addEventListener("click", (e) => {
+    e.preventDefault();
+    setMode("forgot");
+  });
+
+  $("#auth-back").addEventListener("click", (e) => {
+    e.preventDefault();
+    setMode("login");
   });
 
   $("#auth-submit").addEventListener("click", async () => {
@@ -598,13 +639,30 @@ function setupAuthForm() {
     const errEl    = $("#auth-error");
     const btn      = $("#auth-submit");
 
-    if (!email || !password) { errEl.textContent = "Email et mot de passe requis."; return; }
-
+    errEl.textContent = "";
+    errEl.style.color = "#f87171";
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span>';
-    errEl.textContent = "";
 
     try {
+      if (mode === "forgot") {
+        if (!email) { errEl.textContent = "Email requis."; return; }
+        await authResetPassword(email);
+        errEl.style.color = "#4ade80";
+        errEl.textContent = "Lien envoyé ! Vérifie ta boîte mail.";
+        return;
+      }
+
+      if (mode === "recovery") {
+        const newPass = $("#auth-new-password").value;
+        if (!newPass || newPass.length < 6) { errEl.textContent = "Mot de passe trop court (6 caractères min)."; return; }
+        await authUpdatePassword(newPass);
+        history.replaceState(null, "", window.location.pathname);
+        return;
+      }
+
+      if (!email || !password) { errEl.textContent = "Email et mot de passe requis."; return; }
+
       if (mode === "login") {
         await authSignIn(email, password);
       } else {
@@ -612,20 +670,18 @@ function setupAuthForm() {
         if (!result.session) {
           errEl.style.color = "#4ade80";
           errEl.textContent = "Compte créé ! Vérifiez votre email pour confirmer.";
-          btn.disabled = false;
-          btn.textContent = "Créer un compte";
           return;
         }
       }
     } catch (err) {
-      errEl.style.color = "#f87171";
       errEl.textContent = err.message;
+    } finally {
       btn.disabled = false;
-      btn.textContent = mode === "login" ? "Se connecter" : "Créer un compte";
+      btn.textContent = LABELS[mode] || LABELS.login;
     }
   });
 
-  ["auth-email", "auth-password"].forEach(id => {
+  ["auth-email", "auth-password", "auth-new-password"].forEach(id => {
     $(`#${id}`).addEventListener("keydown", e => {
       if (e.key === "Enter") $("#auth-submit").click();
     });
@@ -682,7 +738,11 @@ document.addEventListener("DOMContentLoaded", () => {
         showApp(user);
         await loadUserData();
       },
-      () => showAuthOverlay()
+      () => showAuthOverlay(),
+      () => {
+        showAuthOverlay();
+        if (window._setAuthMode) window._setAuthMode("recovery");
+      }
     );
   } else {
     // Pas de Supabase configuré — mode sans auth
