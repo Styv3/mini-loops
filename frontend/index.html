@@ -69,6 +69,11 @@
           <h3>Configuration de la marque</h3>
 
           <div class="field">
+            <label>Démarrer depuis un template</label>
+            <div id="template-grid" class="template-grid"></div>
+          </div>
+
+          <div class="field">
             <label>Nom de la marque</label>
             <input type="text" id="brand-name" placeholder="Ex: GlowSkin" value="GlowSkin" />
           </div>
@@ -99,6 +104,42 @@
           </div>
 
           <div class="field">
+            <label>Typographie</label>
+            <div id="font-picker" class="font-picker"></div>
+          </div>
+
+          <div class="field">
+            <label>Style visuel</label>
+            <div id="style-grid" class="style-grid">
+              <div class="style-btn selected" data-style="">
+                <span class="style-icon">◈</span>
+                <span class="style-label">Auto</span>
+              </div>
+              <div class="style-btn" data-style="luxury">
+                <span class="style-icon">◆</span>
+                <span class="style-label">Luxe</span>
+              </div>
+              <div class="style-btn" data-style="minimal">
+                <span class="style-icon">□</span>
+                <span class="style-label">Minimal</span>
+              </div>
+              <div class="style-btn" data-style="bold">
+                <span class="style-icon">■</span>
+                <span class="style-label">Bold</span>
+              </div>
+              <div class="style-btn" data-style="ugc">
+                <span class="style-icon">◉</span>
+                <span class="style-label">UGC</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Couleurs <span id="color-preview-label" style="font-size:0.7rem;color:var(--text-muted);">Aperçu live</span></label>
+            <div id="color-preview" class="color-preview"></div>
+          </div>
+
+          <div class="field">
             <label>Couleurs</label>
             <div class="color-row">
               <div class="color-field">
@@ -113,8 +154,44 @@
           </div>
 
           <div class="field">
+            <label>Variantes par format <span id="variants-label" style="color:var(--accent);font-weight:700;">1</span></label>
+            <input type="range" id="variants-slider" min="1" max="4" value="1" class="variants-slider" />
+          </div>
+
+          <div class="field">
             <label>Formats</label>
             <div id="format-grid" class="format-grid"></div>
+          </div>
+
+          <div class="field">
+            <label>Logo de la marque <span style="color:var(--text-muted);font-weight:400;">(optionnel — PNG/JPG)</span></label>
+            <div class="upload-zone" id="logo-drop" data-type="logo">
+              <input type="file" id="logo-input" accept="image/*" style="display:none;" />
+              <div class="upload-placeholder" id="logo-placeholder">
+                <span class="upload-icon">⬆</span>
+                <span>Glisse ou clique pour uploader</span>
+              </div>
+              <div class="upload-preview" id="logo-preview" style="display:none;">
+                <img id="logo-img" src="" alt="Logo" />
+                <button class="upload-remove" data-target="logo">✕</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Image produit <span style="color:var(--text-muted);font-weight:400;">(fond retiré auto)</span></label>
+            <div class="upload-zone" id="product-drop" data-type="product">
+              <input type="file" id="product-input" accept="image/*" style="display:none;" />
+              <div class="upload-placeholder" id="product-placeholder">
+                <span class="upload-icon">⬆</span>
+                <span>Glisse ou clique pour uploader</span>
+              </div>
+              <div class="upload-preview" id="product-preview" style="display:none;">
+                <img id="product-img" src="" alt="Produit" />
+                <button class="upload-remove" data-target="product">✕</button>
+                <span id="product-status" class="upload-status"></span>
+              </div>
+            </div>
           </div>
 
           <div class="field">
@@ -138,11 +215,18 @@
             </div>
           </div>
 
+          <div class="field" id="model-field" style="display:none;">
+            <label>Modèle IA</label>
+            <div id="model-grid" class="model-grid"></div>
+          </div>
+
           <div style="display:flex;gap:8px;margin-top:8px;">
             <button class="btn btn-secondary btn-sm" id="btn-suggest" style="flex:1;">
               ✦ Suggérer un copy
             </button>
           </div>
+
+          <div id="copy-variants-panel" class="copy-variants-panel" style="display:none;"></div>
 
           <div style="margin-top:12px;">
             <button class="btn btn-primary" id="btn-generate">Générer les publicités</button>
@@ -150,15 +234,27 @@
 
           <div id="gen-status" class="status" style="display:none;"></div>
         </div>
+
+        <!-- Brand Kit -->
+        <div class="card" style="margin-top:12px;">
+          <h3>Brand Kits <span style="font-size:0.7rem;color:var(--text-muted);text-transform:none;letter-spacing:0;">Sauvegarde rapide</span></h3>
+          <div style="display:flex;gap:8px;margin-bottom:12px;">
+            <input type="text" id="kit-name" placeholder="Nom du kit…" style="flex:1;" />
+            <button class="btn btn-secondary btn-sm" id="btn-save-kit">Sauv.</button>
+          </div>
+          <div id="kit-list" class="kit-list"></div>
+        </div>
       </div>
 
       <!-- RIGHT: Generated ads -->
       <div>
         <div class="section-header">
           <h2>Visuels générés</h2>
-          <button id="btn-download-all" class="btn btn-secondary btn-sm" style="display:none;">
-            ↓ Tout télécharger
-          </button>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <button id="btn-mock-toggle" class="btn btn-secondary btn-sm mock-toggle-btn" style="display:none;" title="Aperçu contextuel">⬜ Mock</button>
+            <button id="btn-download-zip" class="btn btn-secondary btn-sm" style="display:none;">↓ ZIP</button>
+            <button id="btn-download-all" class="btn btn-secondary btn-sm" style="display:none;">↓ Tout télécharger</button>
+          </div>
         </div>
 
         <div id="ads-grid">
@@ -205,6 +301,8 @@
 </div><!-- /app-root -->
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3/dist/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/color-thief/2.3.2/color-thief.umd.js"></script>
 <script src="js/config.js"></script>
 <script src="js/auth.js"></script>
 <script src="js/db.js"></script>

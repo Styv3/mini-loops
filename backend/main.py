@@ -1,10 +1,13 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from typing import Optional
+import asyncio
 import base64
+import json
 import os
+import io
 
 from generator import generate_ad, AD_FORMATS
 from analyzer import get_sector_analysis, suggest_copy
@@ -36,6 +39,11 @@ class GenerateRequest(BrandConfig):
     formats: Optional[list[str]] = ["feed", "story", "banner"]
     variants_per_format: Optional[int] = 2
     image_source: Optional[str] = "none"   # "none" | "stock" | "ai"
+    ai_model: Optional[str] = "flux"       # "flux" | "flux-pro" | "flux-realism" | "turbo"
+    logo_b64: Optional[str] = ""           # PNG RGBA base64
+    product_b64: Optional[str] = ""        # PNG RGBA base64 (fond retiré)
+    style_preset: Optional[str] = ""       # "" | "luxury" | "minimal" | "bold" | "ugc"
+    font_family: Optional[str] = ""        # "" | "poppins" | "montserrat" | etc.
 
 
 @app.get("/")
@@ -56,12 +64,17 @@ def list_formats():
 
 @app.post("/analyze")
 def analyze(config: BrandConfig):
-    return get_sector_analysis(config.sector)
+    return get_sector_analysis(config.sector, config.brand_name, config.description)
 
 
 @app.post("/suggest")
 def suggest(config: BrandConfig):
-    return suggest_copy(config.brand_name, config.sector)
+    return suggest_copy(
+        config.brand_name,
+        config.sector,
+        description=config.description,
+        tagline=config.tagline,
+    )
 
 
 @app.post("/generate")
@@ -82,6 +95,11 @@ def generate(req: GenerateRequest):
                 format_key=fmt,
                 variant=v,
                 image_source=req.image_source or "none",
+                ai_model=req.ai_model or "flux",
+                logo_b64=req.logo_b64 or "",
+                product_b64=req.product_b64 or "",
+                style_preset=req.style_preset or "",
+                font_family=req.font_family or "",
             )
             results.append({
                 "format": fmt,
@@ -91,6 +109,66 @@ def generate(req: GenerateRequest):
                 "image_b64": base64.b64encode(png_bytes).decode(),
             })
     return {"ads": results, "total": len(results)}
+
+
+@app.post("/generate/stream")
+async def generate_stream(req: GenerateRequest):
+    """SSE endpoint — envoie chaque image dès qu'elle est générée."""
+    formats = [f for f in (req.formats or ["feed"]) if f in AD_FORMATS]
+    vpf = max(1, req.variants_per_format or 1)
+    total = len(formats) * vpf
+
+    def _build_kwargs(fmt: str, v: int) -> dict:
+        return dict(
+            brand_name=req.brand_name, tagline=req.tagline,
+            description=req.description, cta=req.cta,
+            primary_color=req.primary_color, secondary_color=req.secondary_color,
+            sector=req.sector, format_key=fmt, variant=v,
+            image_source=req.image_source or "none",
+            ai_model=req.ai_model or "flux",
+            logo_b64=req.logo_b64 or "",
+            product_b64=req.product_b64 or "",
+            style_preset=req.style_preset or "",
+            font_family=req.font_family or "",
+        )
+
+    async def event_gen():
+        done = 0
+        for fmt in formats:
+            for v in range(vpf):
+                try:
+                    png = await asyncio.to_thread(generate_ad, **_build_kwargs(fmt, v))
+                    done += 1
+                    payload = json.dumps({
+                        "format": fmt, "variant": v + 1,
+                        "width": AD_FORMATS[fmt][0], "height": AD_FORMATS[fmt][1],
+                        "image_b64": base64.b64encode(png).decode(),
+                        "done": done, "total": total,
+                    })
+                except Exception as e:
+                    done += 1
+                    payload = json.dumps({"error": str(e), "format": fmt, "done": done, "total": total})
+                yield f"data: {payload}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.post("/remove-bg")
+async def remove_background(file: UploadFile = File(...)):
+    """Retire le fond d'une image uploadée, retourne un PNG avec transparence en base64."""
+    try:
+        from rembg import remove as rembg_remove
+        data = await file.read()
+        result = rembg_remove(data)
+        b64 = base64.b64encode(result).decode()
+        return {"image_b64": b64, "mime": "image/png"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/generate/single")

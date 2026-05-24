@@ -5,6 +5,11 @@ const state = {
   formats: ["feed", "story", "banner"],
   selectedFormats: ["feed"],
   imageSource: "none",
+  aiModel: "flux",
+  stylePreset: "",
+  fontFamily: "",
+  variantsPerFormat: 1,
+  mockMode: false,
   ads: [],
   analysis: null,
   history: [],
@@ -52,8 +57,12 @@ function saveBrandConfig() {
     primary_color:   $("#primary-hex").value,
     secondary_color: $("#secondary-hex").value,
     sector:          $("#sector").value,
-    selectedFormats: state.selectedFormats,
-    imageSource:     state.imageSource,
+    selectedFormats:    state.selectedFormats,
+    imageSource:        state.imageSource,
+    aiModel:            state.aiModel,
+    stylePreset:        state.stylePreset,
+    fontFamily:         state.fontFamily,
+    variantsPerFormat:  state.variantsPerFormat,
   };
   localStorage.setItem(LS_KEY, JSON.stringify(cfg));
   if (SUPABASE_OK) scheduleBrandConfigDBSave();
@@ -88,6 +97,24 @@ function applyConfig(cfg) {
   if (cfg.image_source || cfg.imageSource) {
     state.imageSource = cfg.image_source || cfg.imageSource;
     $$(".source-btn").forEach(b => b.classList.toggle("selected", b.dataset.source === state.imageSource));
+    updateModelFieldVisibility();
+  }
+  if (cfg.aiModel) {
+    state.aiModel = cfg.aiModel;
+    $$(".model-btn").forEach(b => b.classList.toggle("selected", b.dataset.model === state.aiModel));
+  }
+  if (cfg.stylePreset !== undefined) {
+    state.stylePreset = cfg.stylePreset;
+    $$(".style-btn").forEach(b => b.classList.toggle("selected", b.dataset.style === state.stylePreset));
+  }
+  if (cfg.variantsPerFormat) {
+    state.variantsPerFormat = cfg.variantsPerFormat;
+    const sl = $("#variants-slider");
+    if (sl) { sl.value = state.variantsPerFormat; $("#variants-label").textContent = state.variantsPerFormat; }
+  }
+  if (cfg.fontFamily !== undefined) {
+    state.fontFamily = cfg.fontFamily;
+    $$(".font-btn").forEach(b => b.classList.toggle("selected", b.dataset.font === state.fontFamily));
   }
 }
 
@@ -120,11 +147,13 @@ function syncColor(colorInput, textInput) {
   colorInput.addEventListener("input", () => {
     textInput.value = colorInput.value;
     saveBrandConfig();
+    updateColorPreview();
   });
   textInput.addEventListener("input", () => {
     if (/^#[0-9a-fA-F]{6}$/.test(textInput.value)) {
       colorInput.value = textInput.value;
       saveBrandConfig();
+      updateColorPreview();
     }
   });
 }
@@ -159,14 +188,49 @@ function initFormatButtons() {
 // ---------------------------------------------------------------------------
 // Source selector
 // ---------------------------------------------------------------------------
+function updateModelFieldVisibility() {
+  const f = $("#model-field");
+  if (f) f.style.display = state.imageSource === "ai" ? "block" : "none";
+}
+
 function initSourceButtons() {
   $$(".source-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       $$(".source-btn").forEach((b) => b.classList.remove("selected"));
       btn.classList.add("selected");
       state.imageSource = btn.dataset.source;
+      updateModelFieldVisibility();
       saveBrandConfig();
     });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Model selector
+// ---------------------------------------------------------------------------
+const MODELS = [
+  { key: "flux",         icon: "⚡", label: "Schnell",  desc: "Rapide" },
+  { key: "flux-pro",     icon: "✦",  label: "Pro",      desc: "Qualité" },
+  { key: "flux-realism", icon: "📸", label: "Réaliste", desc: "Photo" },
+  { key: "turbo",        icon: "🚀", label: "Turbo",    desc: "Ultra" },
+];
+
+function initModelButtons() {
+  const grid = $("#model-grid");
+  if (!grid) return;
+  grid.innerHTML = "";
+  MODELS.forEach(({ key, icon, label, desc }) => {
+    const btn = document.createElement("div");
+    btn.className = "model-btn" + (state.aiModel === key ? " selected" : "");
+    btn.dataset.model = key;
+    btn.innerHTML = `<span class="model-icon">${icon}</span><span class="model-label">${label}</span><span class="model-desc">${desc}</span>`;
+    btn.addEventListener("click", () => {
+      $$(".model-btn").forEach(b => b.classList.remove("selected"));
+      btn.classList.add("selected");
+      state.aiModel = key;
+      saveBrandConfig();
+    });
+    grid.appendChild(btn);
   });
 }
 
@@ -262,64 +326,90 @@ async function generateAds() {
   btn.innerHTML = '<span class="spinner"></span> Génération…';
   setStatus(status, "Génération des visuels en cours…", "loading");
   grid.innerHTML = "";
+  state.ads = [];
   $("#btn-download-all").style.display = "none";
+  $("#btn-download-zip").style.display = "none";
+  $("#btn-mock-toggle").style.display = "none";
 
   const config = getBrandConfig();
   saveBrandConfig();
   const payload = {
     ...config,
     formats: state.selectedFormats,
-    variants_per_format: 1,
+    variants_per_format: state.variantsPerFormat,
     image_source: state.imageSource,
+    ai_model: state.aiModel,
+    style_preset: state.stylePreset,
+    font_family: state.fontFamily || "",
+    logo_b64: uploads.logo.b64 || "",
+    product_b64: uploads.product.b64 || "",
   };
 
   const isAI = state.imageSource === "ai";
-  const totalAds = state.selectedFormats.length;
-  const timeoutMs = isAI ? totalAds * 55000 : 30000;
+  const totalAds = state.selectedFormats.length * state.variantsPerFormat;
+  const MODEL_TIMES = { "flux": 15, "flux-pro": 25, "flux-realism": 18, "turbo": 8 };
+  const secPerAd = MODEL_TIMES[state.aiModel] || 15;
+  const timeoutMs = isAI ? totalAds * secPerAd * 1500 + 15000 : 45000;
 
-  let progress = null;
-  let progressInterval = null;
-  if (isAI) {
-    progress = showProgress(btn.closest(".card"), totalAds);
-    let elapsed = 0;
-    const est = totalAds * 22;
-    progressInterval = setInterval(() => {
-      elapsed++;
-      const pct = Math.min(0.9, elapsed / est);
-      progress.update(pct * totalAds, `Génération IA… ~${Math.max(0, est - elapsed)}s restantes`);
-    }, 1000);
-  }
+  const progress = showProgress(btn.closest(".card"), totalAds);
 
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
-    const res = await fetch(`${API}/generate`, {
+
+    const res = await fetch(`${API}/generate/stream`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
       signal: controller.signal,
     });
-    clearTimeout(timer);
     if (!res.ok) throw new Error(await res.text());
 
-    const data = await res.json();
-    state.ads = data.ads.map((ad) => ({ ...ad, source: state.imageSource }));
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const chunks = buffer.split("\n\n");
+      buffer = chunks.pop();
+      for (const chunk of chunks) {
+        if (!chunk.startsWith("data: ")) continue;
+        const raw = chunk.slice(6).trim();
+        if (raw === "[DONE]") break;
+        try {
+          const ad = JSON.parse(raw);
+          if (ad.error) { console.warn("[stream]", ad.error); continue; }
+          ad.source = state.imageSource;
+          state.ads.push(ad);
+          appendAd(ad, state.ads.length - 1);
+          progress.update(ad.done, `${ad.done} / ${ad.total} visuel${ad.done > 1 ? "s" : ""} généré${ad.done > 1 ? "s" : ""}`);
+        } catch {}
+      }
+    }
+    clearTimeout(timer);
+
+    if (!state.ads.length) throw new Error("Aucun visuel généré.");
     pushHistory(state.ads, config);
-    renderAds(state.ads);
     setStatus(status, "", "");
-    $("#btn-download-all").style.display = state.ads.length > 1 ? "inline-flex" : "none";
-    if (progress) { progress.update(totalAds, "Terminé !"); setTimeout(() => progress.hide(), 2000); }
+    const hasMany = state.ads.length > 1;
+    $("#btn-download-all").style.display = hasMany ? "inline-flex" : "none";
+    $("#btn-download-zip").style.display = hasMany ? "inline-flex" : "none";
+    $("#btn-mock-toggle").style.display = "inline-flex";
+    progress.update(totalAds, "Terminé !");
+    setTimeout(() => progress.hide(), 2000);
 
     if (SUPABASE_OK) dbSaveAds(state.ads, config).catch(console.error);
   } catch (err) {
     const msg = err.name === "AbortError"
-      ? "Timeout dépassé — essaie avec moins de formats."
+      ? "Timeout dépassé — essaie avec moins de formats ou Turbo."
       : `Erreur : ${err.message}. Le backend est-il démarré ?`;
     setStatus(status, msg, "error");
-    if (progress) progress.hide();
+    progress.hide();
     checkHealth();
   } finally {
-    if (progressInterval) clearInterval(progressInterval);
     btn.disabled = false;
     btn.textContent = "Générer les publicités";
   }
@@ -330,6 +420,108 @@ async function generateAds() {
 // ---------------------------------------------------------------------------
 const SOURCE_LABELS = { none: "Couleurs", stock: "Stock", ai: "IA" };
 
+function _buildAdCard(ad, i) {
+  const sourceLabel = SOURCE_LABELS[ad.source] || "";
+  const score = computePerformanceScore(getBrandConfig(), ad);
+  const scoreColor = score >= 80 ? "#22c55e" : score >= 60 ? "#f59e0b" : "#ef4444";
+  const card = document.createElement("div");
+  card.className = "ad-card";
+  card.dataset.format = ad.format;
+  card.innerHTML = `
+    <div class="ad-img-wrap">
+      <img src="data:image/png;base64,${ad.image_b64}" alt="${ad.format} v${ad.variant}" loading="lazy" />
+      <span class="source-badge src-${ad.source}">${sourceLabel}</span>
+      <button class="ad-zoom-btn" title="Aperçu plein écran">⤢</button>
+      <button class="ad-regen-btn" title="Régénérer ce visuel">↺</button>
+    </div>
+    <div class="ad-meta">
+      <div class="ad-label">
+        <strong>${ad.format}</strong>
+        ${ad.width}×${ad.height} · V${ad.variant}
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <span class="perf-badge" style="background:${scoreColor}22;color:${scoreColor};border:1px solid ${scoreColor}44;" title="Score de performance estimé">${score}</span>
+        <button class="btn btn-secondary btn-sm" title="Télécharger" onclick="downloadAd(${i})">↓</button>
+      </div>
+    </div>`;
+  card.querySelector(".ad-zoom-btn").addEventListener("click", () => openLightbox(i));
+  card.querySelector("img").addEventListener("click", () => openLightbox(i));
+  card.querySelector(".ad-regen-btn").addEventListener("click", () => regenAd(i));
+  return card;
+}
+
+function appendAd(ad, i) {
+  const grid = $("#ads-grid");
+  if (!grid.querySelector(".ad-card")) grid.innerHTML = "";
+  const card = _buildAdCard(ad, i);
+  grid.appendChild(card);
+  if (state.mockMode) applyMockClasses();
+}
+
+async function regenAd(index) {
+  const ad = state.ads[index];
+  if (!ad) return;
+  const card = document.querySelectorAll(".ad-card")[index];
+  if (!card) return;
+  const regenBtn = card.querySelector(".ad-regen-btn");
+  regenBtn.classList.add("spinning");
+  regenBtn.disabled = true;
+
+  const config = getBrandConfig();
+  const payload = {
+    ...config,
+    formats: [ad.format],
+    variants_per_format: 1,
+    image_source: state.imageSource,
+    ai_model: state.aiModel,
+    style_preset: state.stylePreset,
+    font_family: state.fontFamily || "",
+    logo_b64: uploads.logo.b64 || "",
+    product_b64: uploads.product.b64 || "",
+  };
+
+  try {
+    const res = await fetch(`${API}/generate/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(60000),
+    });
+    if (!res.ok) throw new Error(await res.text());
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const chunks = buffer.split("\n\n");
+      buffer = chunks.pop();
+      for (const chunk of chunks) {
+        if (!chunk.startsWith("data: ")) continue;
+        const raw = chunk.slice(6).trim();
+        if (raw === "[DONE]") break;
+        try {
+          const newAd = JSON.parse(raw);
+          if (newAd.error || !newAd.image_b64) continue;
+          newAd.source = state.imageSource;
+          newAd.variant = ad.variant;
+          state.ads[index] = newAd;
+          const newCard = _buildAdCard(newAd, index);
+          card.replaceWith(newCard);
+          if (state.mockMode) applyMockClasses();
+          return;
+        } catch {}
+      }
+    }
+  } catch (err) {
+    notify(`Regen échoué : ${err.message}`, "error");
+    regenBtn.classList.remove("spinning");
+    regenBtn.disabled = false;
+  }
+}
+
 function renderAds(ads) {
   const grid = $("#ads-grid");
   if (!ads.length) {
@@ -337,40 +529,77 @@ function renderAds(ads) {
     return;
   }
   grid.innerHTML = "";
-  ads.forEach((ad, i) => {
-    const sourceLabel = SOURCE_LABELS[ad.source] || "";
-    const card = document.createElement("div");
-    card.className = "ad-card";
-    card.innerHTML = `
-      <div class="ad-img-wrap">
-        <img src="data:image/png;base64,${ad.image_b64}" alt="${ad.format} v${ad.variant}" loading="lazy" />
-        <span class="source-badge src-${ad.source}">${sourceLabel}</span>
-        <button class="ad-zoom-btn" title="Aperçu plein écran">⤢</button>
-      </div>
-      <div class="ad-meta">
-        <div class="ad-label">
-          <strong>${ad.format}</strong>
-          ${ad.width}×${ad.height} · V${ad.variant}
-        </div>
-        <button class="btn btn-secondary btn-sm" title="Télécharger" onclick="downloadAd(${i})">↓</button>
-      </div>`;
-    card.querySelector(".ad-zoom-btn").addEventListener("click", () => openLightbox(i));
-    card.querySelector("img").addEventListener("click", () => openLightbox(i));
-    grid.appendChild(card);
-  });
+  ads.forEach((ad, i) => grid.appendChild(_buildAdCard(ad, i)));
+  applyMockClasses();
+}
+
+function _slugBrand() {
+  return ($("#brand-name")?.value || "brand").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "brand";
 }
 
 function downloadAd(index) {
   const ad = state.ads[index];
   const a = document.createElement("a");
   a.href = `data:image/png;base64,${ad.image_b64}`;
-  a.download = `loops-${ad.format}-v${ad.variant}.png`;
+  a.download = `${_slugBrand()}-${ad.format}-v${ad.variant}.png`;
   a.click();
 }
 
 function downloadAll() {
   state.ads.forEach((_, i) => {
     setTimeout(() => downloadAd(i), i * 300);
+  });
+}
+
+async function downloadAllZip() {
+  if (!window.JSZip) { notify("JSZip non disponible", "error"); return; }
+  const btn = $("#btn-download-zip");
+  btn.disabled = true;
+  btn.textContent = "…";
+  const zip = new window.JSZip();
+  state.ads.forEach((ad) => {
+    const binary = atob(ad.image_b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let j = 0; j < binary.length; j++) bytes[j] = binary.charCodeAt(j);
+    zip.file(`loops-${ad.format}-v${ad.variant}.png`, bytes);
+  });
+  const blob = await zip.generateAsync({ type: "blob" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${_slugBrand()}-${Date.now()}.zip`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  btn.disabled = false;
+  btn.textContent = "↓ ZIP";
+}
+
+// ---------------------------------------------------------------------------
+// Mock contextuel
+// ---------------------------------------------------------------------------
+function toggleMock() {
+  state.mockMode = !state.mockMode;
+  const btn = $("#btn-mock-toggle");
+  btn.classList.toggle("active", state.mockMode);
+  btn.textContent = state.mockMode ? "⬛ Mock ON" : "⬜ Mock";
+  applyMockClasses();
+}
+
+function applyMockClasses() {
+  document.querySelectorAll(".ad-card").forEach(card => {
+    const fmt = card.dataset.format;
+    card.classList.remove("mock-phone", "mock-browser");
+    if (!state.mockMode) return;
+    if (fmt === "story" || fmt === "feed") {
+      card.classList.add("mock-phone");
+    } else if (fmt === "banner") {
+      card.classList.add("mock-browser");
+      if (!card.querySelector(".browser-bar")) {
+        const bar = document.createElement("div");
+        bar.className = "browser-bar";
+        bar.innerHTML = `<span class="browser-dot" style="background:#ff5f56;"></span><span class="browser-dot" style="background:#ffbd2e;"></span><span class="browser-dot" style="background:#27c93f;"></span>`;
+        card.insertBefore(bar, card.firstChild);
+      }
+    }
   });
 }
 
@@ -480,10 +709,15 @@ async function loadAnalysis() {
 
 function renderAnalysis(data) {
   const container = $("#analysis-container");
-  const hooksHtml    = data.top_hooks.map((h) => `<span class="tag">${h}</span>`).join("");
-  const ctasHtml     = data.top_ctas.map((c) => `<span class="tag">${c}</span>`).join("");
-  const insightsHtml = data.insights.map((i) => `<li>${i}</li>`).join("");
-  const compsHtml    = data.competitor_ads.map((c) => `
+  const isAI = data.source === "ai";
+  const sourceBadge = isAI
+    ? `<span class="copy-source-badge" style="margin-left:8px;">✦ IA</span>`
+    : `<span class="copy-source-badge src-static" style="margin-left:8px;">Statique</span>`;
+
+  const hooksHtml    = data.top_hooks.map(h => `<span class="tag">${h}</span>`).join("");
+  const ctasHtml     = data.top_ctas.map(c => `<span class="tag">${c}</span>`).join("");
+  const insightsHtml = data.insights.map(i => `<li>${i}</li>`).join("");
+  const compsHtml    = data.competitor_ads.map(c => `
     <tr>
       <td>${c.brand}</td>
       <td>${c.hook}</td>
@@ -494,7 +728,7 @@ function renderAnalysis(data) {
   container.innerHTML = `
     <div class="insights-grid">
       <div class="insight-card">
-        <h4>ROAS moyen secteur</h4>
+        <h4>ROAS moyen secteur ${sourceBadge}</h4>
         <div class="roas-badge">× ${data.avg_roas}</div>
       </div>
       <div class="insight-card">
@@ -523,7 +757,10 @@ function renderAnalysis(data) {
 // Suggest copy
 // ---------------------------------------------------------------------------
 async function suggestCopy() {
+  const btn = $("#btn-suggest");
   const config = getBrandConfig();
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>';
   try {
     const res = await fetch(`${API}/suggest`, {
       method: "POST",
@@ -532,14 +769,68 @@ async function suggestCopy() {
     });
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
-    $("#tagline").value = data.suggested_tagline;
-    $("#cta").value = data.suggested_cta;
-    saveBrandConfig();
-    if (data.tip) notify("Conseil : " + data.tip, "info");
+    if (data.variants && data.variants.length) {
+      renderCopyVariants(data);
+    } else {
+      $("#tagline").value = data.suggested_tagline;
+      $("#cta").value = data.suggested_cta;
+      saveBrandConfig();
+      if (data.tip) notify("Conseil : " + data.tip, "info");
+    }
   } catch (err) {
     notify("Erreur : " + err.message, "error");
     checkHealth();
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = "✦ Suggérer un copy";
   }
+}
+
+function renderCopyVariants(data) {
+  const panel = $("#copy-variants-panel");
+  if (!panel) return;
+  const isAI = data.source === "ai";
+  const badgeClass = isAI ? "" : "src-static";
+  const badgeLabel = isAI ? "✦ IA" : "Statique";
+
+  panel.innerHTML = `
+    <div class="copy-variants-header">
+      <span class="copy-variants-title">
+        5 propositions
+        <span class="copy-source-badge ${badgeClass}">${badgeLabel}</span>
+      </span>
+      <button class="copy-variants-close" title="Fermer">✕</button>
+    </div>
+    ${data.variants.map((v, i) => `
+      <div class="copy-variant-item" data-index="${i}">
+        <div class="variant-text">
+          <div class="variant-tagline">${v.tagline}</div>
+          <div class="variant-cta">CTA : ${v.cta}</div>
+        </div>
+        <span class="variant-apply">Appliquer →</span>
+      </div>
+    `).join("")}
+    ${data.tip ? `<div class="copy-tip">💡 ${data.tip}</div>` : ""}
+  `;
+  panel.style.display = "flex";
+
+  panel.querySelector(".copy-variants-close").addEventListener("click", () => {
+    panel.style.display = "none";
+  });
+
+  panel.querySelectorAll(".copy-variant-item").forEach(item => {
+    item.addEventListener("click", () => {
+      const i = parseInt(item.dataset.index);
+      const v = data.variants[i];
+      $("#tagline").value = v.tagline;
+      $("#cta").value = v.cta;
+      saveBrandConfig();
+      updateColorPreview();
+      panel.querySelectorAll(".copy-variant-item").forEach(el => el.classList.remove("applied"));
+      item.classList.add("applied");
+      item.querySelector(".variant-apply").textContent = "✓ Appliqué";
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -689,6 +980,468 @@ function setupAuthForm() {
 }
 
 // ---------------------------------------------------------------------------
+// Performance score heuristic
+// ---------------------------------------------------------------------------
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+  return [r, g, b];
+}
+
+function relativeLuminance([r, g, b]) {
+  return [r, g, b].reduce((acc, c, i) => {
+    const s = c / 255;
+    const lin = s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+    return acc + lin * [0.2126, 0.7152, 0.0722][i];
+  }, 0);
+}
+
+function contrastRatio(hex1, hex2) {
+  const l1 = relativeLuminance(hexToRgb(hex1));
+  const l2 = relativeLuminance(hexToRgb(hex2));
+  return (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+}
+
+function computePerformanceScore(config, ad) {
+  let score = 40;
+
+  // Tagline (5-10 words ideal)
+  const tw = (config.tagline || "").trim().split(/\s+/).length;
+  if (tw >= 5 && tw <= 10) score += 18;
+  else if (tw >= 3 && tw <= 12) score += 10;
+
+  // CTA (2-4 words ideal)
+  const cw = (config.cta || "").trim().split(/\s+/).length;
+  if (cw >= 2 && cw <= 4) score += 12;
+  else if (cw === 1) score += 6;
+
+  // Description present
+  if ((config.description || "").length > 15) score += 8;
+
+  // Color contrast
+  try {
+    const ratio = contrastRatio(config.primary_color, config.secondary_color);
+    if (ratio >= 4.5) score += 15;
+    else if (ratio >= 3) score += 8;
+    else if (ratio >= 2) score += 3;
+  } catch {}
+
+  // Format bonus (story outperforms)
+  if (ad.format === "story") score += 5;
+  if (ad.format === "feed")  score += 3;
+
+  // Logo / product uploaded
+  if (uploads.logo.b64)    score += 4;
+  if (uploads.product.b64) score += 4;
+
+  return Math.min(100, Math.max(10, score));
+}
+
+// ---------------------------------------------------------------------------
+// Google Fonts picker
+// ---------------------------------------------------------------------------
+const FONTS_LIST = [
+  { key: "",            label: "Système",   css: "inherit" },
+  { key: "poppins",     label: "Poppins",   css: "'Poppins', sans-serif" },
+  { key: "montserrat",  label: "Montserrat",css: "'Montserrat', sans-serif" },
+  { key: "playfair",    label: "Playfair",  css: "'Playfair Display', serif" },
+  { key: "oswald",      label: "Oswald",    css: "'Oswald', sans-serif" },
+  { key: "raleway",     label: "Raleway",   css: "'Raleway', sans-serif" },
+];
+
+const GFONTS_IMPORT = "https://fonts.googleapis.com/css2?family=Poppins:wght@700&family=Montserrat:wght@700&family=Playfair+Display:wght@700&family=Oswald:wght@700&family=Raleway:wght@700&display=swap";
+
+function initFontPicker() {
+  // Inject Google Fonts stylesheet once
+  if (!document.getElementById("gfonts-link")) {
+    const link = document.createElement("link");
+    link.id = "gfonts-link";
+    link.rel = "stylesheet";
+    link.href = GFONTS_IMPORT;
+    document.head.appendChild(link);
+  }
+
+  const container = $("#font-picker");
+  if (!container) return;
+  container.innerHTML = "";
+  FONTS_LIST.forEach(f => {
+    const btn = document.createElement("div");
+    btn.className = "font-btn" + (state.fontFamily === f.key ? " selected" : "");
+    btn.dataset.font = f.key;
+    btn.style.fontFamily = f.css;
+    btn.textContent = f.label;
+    btn.addEventListener("click", () => {
+      $$(".font-btn").forEach(b => b.classList.remove("selected"));
+      btn.classList.add("selected");
+      state.fontFamily = f.key;
+      saveBrandConfig();
+      updateColorPreview();
+    });
+    container.appendChild(btn);
+  });
+}
+
+function getFontCss() {
+  return FONTS_LIST.find(f => f.key === (state.fontFamily || ""))?.css || "inherit";
+}
+
+// ---------------------------------------------------------------------------
+// Aperçu couleurs live
+// ---------------------------------------------------------------------------
+function updateColorPreview() {
+  const preview = $("#color-preview");
+  if (!preview) return;
+  const brand   = $("#brand-name")?.value || "Brand";
+  const tagline = $("#tagline")?.value   || "Your tagline here";
+  const cta     = $("#cta")?.value       || "Shop Now";
+  const primary   = $("#primary-hex")?.value   || "#1a1a2e";
+  const secondary = $("#secondary-hex")?.value || "#e94560";
+  const textColor = relativeLuminance(hexToRgb(primary)) > 0.18 ? "#111111" : "#f5f5f5";
+  const ctaText   = relativeLuminance(hexToRgb(secondary)) > 0.18 ? "#111111" : "#ffffff";
+  const fontCss   = getFontCss();
+
+  // Match the Pillow gradient: primary → blend(primary, secondary, 0.55)
+  const p = hexToRgb(primary), s = hexToRgb(secondary);
+  const ge = `rgb(${Math.round(p.r+(s.r-p.r)*0.55)},${Math.round(p.g+(s.g-p.g)*0.55)},${Math.round(p.b+(s.b-p.b)*0.55)})`;
+  const mutedColor = `color-mix(in srgb, ${textColor} 55%, ${primary})`;
+
+  preview.innerHTML = `
+    <div style="
+      width:100%;height:110px;
+      background:linear-gradient(160deg,${primary},${ge});
+      padding:12px 14px;
+      position:relative;overflow:hidden;
+      display:flex;flex-direction:column;justify-content:space-between;
+      font-family:${fontCss};
+    ">
+      <div style="position:absolute;top:-28px;right:-28px;width:72px;height:72px;
+           border-radius:50%;background:${secondary};opacity:.22;"></div>
+      <div>
+        <div style="font-size:.6rem;font-weight:800;letter-spacing:.08em;
+             color:${secondary};text-transform:uppercase;margin-bottom:2px;">${brand}</div>
+        <div style="width:20px;height:2px;background:${secondary};margin-bottom:5px;"></div>
+        <div style="font-size:.66rem;font-weight:700;color:${textColor};
+             line-height:1.25;overflow:hidden;display:-webkit-box;
+             -webkit-line-clamp:2;-webkit-box-orient:vertical;">${tagline}</div>
+      </div>
+      <div>
+        <span style="display:inline-block;background:${secondary};color:${ctaText};
+          font-size:.55rem;font-weight:700;padding:4px 10px;border-radius:20px;
+          letter-spacing:.04em;text-transform:uppercase;">${cta}</span>
+      </div>
+    </div>`;
+}
+
+// ---------------------------------------------------------------------------
+// Style presets
+// ---------------------------------------------------------------------------
+function initStyleButtons() {
+  $$(".style-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      $$(".style-btn").forEach(b => b.classList.remove("selected"));
+      btn.classList.add("selected");
+      state.stylePreset = btn.dataset.style;
+      saveBrandConfig();
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Variants slider
+// ---------------------------------------------------------------------------
+function initVariantsSlider() {
+  const sl = $("#variants-slider");
+  const lbl = $("#variants-label");
+  if (!sl) return;
+  sl.addEventListener("input", () => {
+    state.variantsPerFormat = parseInt(sl.value);
+    lbl.textContent = sl.value;
+    saveBrandConfig();
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Brand Kit
+// ---------------------------------------------------------------------------
+const KIT_KEY = "loops_brand_kits";
+
+function getBrandKits() {
+  try { return JSON.parse(localStorage.getItem(KIT_KEY) || "{}"); } catch { return {}; }
+}
+
+function saveBrandKit() {
+  const name = $("#kit-name").value.trim();
+  if (!name) { notify("Donne un nom au kit", "error"); return; }
+  const kits = getBrandKits();
+  kits[name] = {
+    ...getBrandConfig(),
+    selectedFormats: state.selectedFormats,
+    imageSource: state.imageSource,
+    aiModel: state.aiModel,
+    stylePreset: state.stylePreset,
+    variantsPerFormat: state.variantsPerFormat,
+  };
+  localStorage.setItem(KIT_KEY, JSON.stringify(kits));
+  $("#kit-name").value = "";
+  renderBrandKits();
+  notify(`Kit "${name}" sauvegardé`, "info");
+}
+
+function deleteBrandKit(name) {
+  const kits = getBrandKits();
+  delete kits[name];
+  localStorage.setItem(KIT_KEY, JSON.stringify(kits));
+  renderBrandKits();
+}
+
+const SECTOR_LABELS_FR = { beaute: "Beauté", ecommerce: "E-com", sante: "Santé", autre: "Autre" };
+
+function renderBrandKits() {
+  const list = $("#kit-list");
+  if (!list) return;
+  const kits = getBrandKits();
+  const names = Object.keys(kits);
+  list.innerHTML = names.length
+    ? ""
+    : `<p style="font-size:0.78rem;color:var(--text-muted);text-align:center;padding:8px 0;">Aucun kit sauvegardé</p>`;
+
+  names.forEach(name => {
+    const kit = kits[name];
+    const item = document.createElement("div");
+    item.className = "kit-item";
+    item.innerHTML = `
+      <div class="kit-swatch-row">
+        <div class="kit-swatch" style="background:${kit.primary_color || "#1a1a2e"};"></div>
+        <div class="kit-swatch" style="background:${kit.secondary_color || "#e94560"};"></div>
+      </div>
+      <span class="kit-name">${name}</span>
+      <span class="kit-sector">${SECTOR_LABELS_FR[kit.sector] || kit.sector}</span>
+      <button class="kit-delete" title="Supprimer">✕</button>`;
+    item.addEventListener("click", e => {
+      if (e.target.classList.contains("kit-delete")) { deleteBrandKit(name); return; }
+      applyConfig(kit);
+      saveBrandConfig();
+      notify(`Kit "${name}" chargé`, "info");
+    });
+    list.appendChild(item);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Color Thief — extraction auto depuis logo
+// ---------------------------------------------------------------------------
+function extractColorsFromLogo(imgEl) {
+  if (!window.ColorThief) return;
+  try {
+    const ct = new window.ColorThief();
+    const dominant = ct.getColor(imgEl);
+    const palette  = ct.getPalette(imgEl, 5);
+
+    const domHex = rgbToHex(...dominant);
+
+    // Palette color most contrasting against dominant
+    let best = palette[1] || dominant;
+    let maxDist = 0;
+    palette.forEach(c => {
+      const d = colorDistance(dominant, c);
+      if (d > maxDist) { maxDist = d; best = c; }
+    });
+    const secHex = rgbToHex(...best);
+
+    $("#primary-hex").value   = domHex;
+    $("#primary-color").value = domHex;
+    $("#secondary-hex").value = secHex;
+    $("#secondary-color").value = secHex;
+    saveBrandConfig();
+
+    notify("Couleurs extraites depuis le logo ✓", "info");
+  } catch (e) {
+    console.warn("[ColorThief]", e);
+  }
+}
+
+function rgbToHex(r, g, b) {
+  return "#" + [r, g, b].map(v => v.toString(16).padStart(2, "0")).join("");
+}
+
+function colorDistance(a, b) {
+  return Math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2);
+}
+
+// ---------------------------------------------------------------------------
+// Templates par secteur
+// ---------------------------------------------------------------------------
+const TEMPLATES = [
+  {
+    name: "GlowSkin",
+    icon: "✨",
+    sector: "beaute",
+    primary_color: "#1a0a2e",
+    secondary_color: "#f472b6",
+    tagline: "90% saw radiant skin in 14 days",
+    description: "Clean, dermatologist-tested formula that transforms your skin.",
+    cta: "Shop Now",
+  },
+  {
+    name: "FitPulse",
+    icon: "💪",
+    sector: "sante",
+    primary_color: "#0f2027",
+    secondary_color: "#00c9a7",
+    tagline: "Feel stronger in just 7 days",
+    description: "Clinically proven supplements trusted by 100k+ athletes.",
+    cta: "Start Today",
+  },
+  {
+    name: "UrbanDrop",
+    icon: "🛍",
+    sector: "ecommerce",
+    primary_color: "#18181b",
+    secondary_color: "#f59e0b",
+    tagline: "Limited drop — only 48h left",
+    description: "Exclusive streetwear collab. Free shipping over $50.",
+    cta: "Grab the Deal",
+  },
+  {
+    name: "NovaSaaS",
+    icon: "⚡",
+    sector: "autre",
+    primary_color: "#0d1b2a",
+    secondary_color: "#7c3aed",
+    tagline: "10x your productivity. Zero effort.",
+    description: "The all-in-one platform top teams use to ship faster.",
+    cta: "Get Started",
+  },
+  {
+    name: "PureBrew",
+    icon: "☕",
+    sector: "ecommerce",
+    primary_color: "#2c1a0e",
+    secondary_color: "#d97706",
+    tagline: "Specialty coffee, delivered weekly",
+    description: "Single-origin beans roasted fresh to your door.",
+    cta: "Try First Box",
+  },
+  {
+    name: "ZenMind",
+    icon: "🧘",
+    sector: "sante",
+    primary_color: "#0f1f17",
+    secondary_color: "#22c55e",
+    tagline: "Sleep better. Stress less. Live more.",
+    description: "Natural adaptogens backed by science, trusted by thousands.",
+    cta: "Learn More",
+  },
+];
+
+function initTemplates() {
+  const grid = $("#template-grid");
+  if (!grid) return;
+  grid.innerHTML = "";
+  TEMPLATES.forEach(t => {
+    const btn = document.createElement("div");
+    btn.className = "template-btn";
+    btn.innerHTML = `
+      <div class="template-swatch" style="background:${t.secondary_color};"></div>
+      <div class="template-info">
+        <div class="template-name">${t.icon} ${t.name}</div>
+        <div class="template-hook">${t.tagline}</div>
+      </div>`;
+    btn.addEventListener("click", () => {
+      applyConfig({
+        brand_name:      t.name,
+        sector:          t.sector,
+        tagline:         t.tagline,
+        description:     t.description,
+        cta:             t.cta,
+        primary_color:   t.primary_color,
+        secondary_color: t.secondary_color,
+      });
+      saveBrandConfig();
+      notify(`Template "${t.name}" appliqué`, "info");
+    });
+    grid.appendChild(btn);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Upload logo / produit
+// ---------------------------------------------------------------------------
+const uploads = { logo: { b64: "" }, product: { b64: "" } };
+
+function initUploadZone(type) {
+  const zone      = $(`#${type}-drop`);
+  const input     = $(`#${type}-input`);
+  const ph        = $(`#${type}-placeholder`);
+  const preview   = $(`#${type}-preview`);
+  const img       = $(`#${type}-img`);
+
+  zone.addEventListener("click", () => input.click());
+  zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("drag-over"); });
+  zone.addEventListener("dragleave", () => zone.classList.remove("drag-over"));
+  zone.addEventListener("drop", e => { e.preventDefault(); zone.classList.remove("drag-over"); handleFile(type, e.dataTransfer.files[0]); });
+  input.addEventListener("change", () => handleFile(type, input.files[0]));
+
+  zone.querySelector(".upload-remove").addEventListener("click", e => {
+    e.stopPropagation();
+    clearUpload(type);
+  });
+}
+
+function clearUpload(type) {
+  uploads[type].b64 = "";
+  $(`#${type}-img`).src = "";
+  $(`#${type}-placeholder`).style.display = "flex";
+  $(`#${type}-preview`).style.display = "none";
+  $(`#${type}-input`).value = "";
+  if (type === "product") {
+    const st = $("#product-status");
+    if (st) st.textContent = "";
+  }
+}
+
+async function handleFile(type, file) {
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = async (e) => {
+    const dataUrl = e.target.result;
+    const b64Raw = dataUrl.split(",")[1];
+    $(`#${type}-img`).src = dataUrl;
+    $(`#${type}-placeholder`).style.display = "none";
+    $(`#${type}-preview`).style.display = "flex";
+
+    if (type === "logo" && window.ColorThief) {
+      const tempImg = new Image();
+      tempImg.crossOrigin = "anonymous";
+      tempImg.onload = () => extractColorsFromLogo(tempImg);
+      tempImg.src = dataUrl;
+    }
+
+    if (type === "product") {
+      const st = $("#product-status");
+      st.textContent = "Retrait du fond…";
+      try {
+        const blob = await (await fetch(dataUrl)).blob();
+        const form = new FormData();
+        form.append("file", blob, file.name);
+        const res = await fetch(`${API}/remove-bg`, { method: "POST", body: form });
+        if (!res.ok) throw new Error(await res.text());
+        const data = await res.json();
+        uploads.product.b64 = data.image_b64;
+        $(`#product-img`).src = `data:image/png;base64,${data.image_b64}`;
+        st.textContent = "✓ Fond retiré";
+      } catch (err) {
+        uploads.product.b64 = b64Raw;
+        st.textContent = "⚠ Sans détourage";
+        console.warn("[remove-bg]", err);
+      }
+    } else {
+      uploads.logo.b64 = b64Raw;
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+// ---------------------------------------------------------------------------
 // Core app init (called after auth)
 // ---------------------------------------------------------------------------
 function initApp() {
@@ -698,7 +1451,7 @@ function initApp() {
   setInterval(checkHealth, 30000);
 
   ["brand-name", "tagline", "description", "cta"].forEach(id => {
-    $(`#${id}`).addEventListener("input", saveBrandConfig);
+    $(`#${id}`).addEventListener("input", () => { saveBrandConfig(); updateColorPreview(); });
   });
   $("#sector").addEventListener("change", saveBrandConfig);
 
@@ -709,15 +1462,35 @@ function initApp() {
     });
   });
 
+  initTemplates();
+  initStyleButtons();
+  initVariantsSlider();
+  initFontPicker();
+  initUploadZone("logo");
+  initUploadZone("product");
+  initModelButtons();
+  updateModelFieldVisibility();
+  renderBrandKits();
+  updateColorPreview();
+
   $("#btn-generate").addEventListener("click", generateAds);
   $("#btn-suggest").addEventListener("click", suggestCopy);
   $("#btn-download-all").addEventListener("click", downloadAll);
+  $("#btn-download-zip").addEventListener("click", downloadAllZip);
+  $("#btn-mock-toggle").addEventListener("click", toggleMock);
+  $("#btn-save-kit").addEventListener("click", saveBrandKit);
   $("#btn-analyze-refresh").addEventListener("click", loadAnalysis);
 
   $("#lightbox").addEventListener("click", e => {
     if (e.target === $("#lightbox") || e.target.id === "lb-close") closeLightbox();
   });
-  document.addEventListener("keydown", e => { if (e.key === "Escape") closeLightbox(); });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") closeLightbox();
+    if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && document.getElementById("page-generate").classList.contains("active")) {
+      e.preventDefault();
+      generateAds();
+    }
+  });
 
   showPage("generate");
 }
