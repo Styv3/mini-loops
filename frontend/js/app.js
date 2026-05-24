@@ -1132,6 +1132,23 @@ function updateColorPreview() {
 }
 
 // ---------------------------------------------------------------------------
+// Advanced section toggle
+// ---------------------------------------------------------------------------
+function initAdvancedToggle() {
+  const btn = $("#btn-advanced-toggle");
+  const section = $("#advanced-section");
+  if (!btn || !section) return;
+  const open = localStorage.getItem("loops_advanced_open") === "1";
+  if (open) { section.style.display = "block"; btn.classList.add("open"); }
+  btn.addEventListener("click", () => {
+    const isOpen = section.style.display !== "none";
+    section.style.display = isOpen ? "none" : "block";
+    btn.classList.toggle("open", !isOpen);
+    localStorage.setItem("loops_advanced_open", isOpen ? "0" : "1");
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Style presets
 // ---------------------------------------------------------------------------
 function initStyleButtons() {
@@ -1462,6 +1479,7 @@ function initApp() {
     });
   });
 
+  initAdvancedToggle();
   initTemplates();
   initStyleButtons();
   initVariantsSlider();
