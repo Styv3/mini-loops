@@ -786,6 +786,8 @@ select { cursor: pointer; appearance: none; background-image: url("data:image/sv
   border-radius: 8px; cursor: pointer;
   background: var(--surface2);
   transition: all 0.15s;
+  min-width: 0;
+  overflow: hidden;
 }
 .template-btn:hover { border-color: var(--accent); background: var(--accent-light); }
 
