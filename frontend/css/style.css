@@ -101,20 +101,21 @@ nav button:hover:not(.active) { background: var(--surface2); color: var(--text);
 .layout {
   display: grid;
   grid-template-columns: 380px 1fr;
-  gap: 32px;
+  gap: 96px;
   align-items: start;
 }
 
-/* Right panel stays fixed in viewport while left scrolls with the page */
-.layout > div:last-child {
+/* Left panel scrolls independently, right panel scrolls with the page */
+.layout > div:first-child {
   position: sticky;
-  top: 88px; /* 60px header + 28px container padding */
+  top: 88px;
   max-height: calc(100vh - 108px);
   overflow-y: auto;
-  scrollbar-width: none;
-  padding-left: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
 }
-.layout > div:last-child::-webkit-scrollbar { display: none; }
+.layout > div:first-child::-webkit-scrollbar { width: 4px; }
+.layout > div:first-child::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 
 /* ---- Cards ---- */
 .card {
