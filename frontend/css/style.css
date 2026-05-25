@@ -105,6 +105,18 @@ nav button:hover:not(.active) { background: var(--surface2); color: var(--text);
   align-items: start;
 }
 
+/* Left panel scrolls independently while right stays visible */
+.layout > div:first-child {
+  position: sticky;
+  top: 88px; /* 60px header + 28px container padding */
+  max-height: calc(100vh - 88px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.layout > div:first-child::-webkit-scrollbar { width: 4px; }
+.layout > div:first-child::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
 /* ---- Cards ---- */
 .card {
   background: var(--surface);
