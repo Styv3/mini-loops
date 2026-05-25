@@ -1098,18 +1098,11 @@ function updateColorPreview() {
   const p = hexToRgb(primary), s = hexToRgb(secondary);
   if (!p || !s) return;
 
-  const textColor = relativeLuminance(p) > 0.25 ? "#111111" : "#ffffff";
-  const ctaText   = relativeLuminance(s)  > 0.25 ? "#111111" : "#ffffff";
-  const fontCss   = getFontCss();
+  const ctaText = relativeLuminance(s) > 0.25 ? "#111111" : "#ffffff";
+  const fontCss = getFontCss();
 
-  // Gradient end: blend primary 50% toward secondary
-  const ge = `rgb(${Math.round(p.r+(s.r-p.r)*0.5)},${Math.round(p.g+(s.g-p.g)*0.5)},${Math.round(p.b+(s.b-p.b)*0.5)})`;
-
-  // Set gradient directly on the outer element (safe fallback if inner div doesn't paint)
-  preview.style.background = `linear-gradient(150deg, ${primary}, ${ge})`;
-
-  // text-shadow ensures legibility on any background
-  const shadow = `0 1px 4px rgba(0,0,0,0.45)`;
+  preview.style.background = "#ffffff";
+  preview.style.borderColor = "var(--border)";
 
   preview.innerHTML = `
     <div style="
@@ -1120,14 +1113,13 @@ function updateColorPreview() {
       font-family:${fontCss};
     ">
       <div style="position:absolute;top:-20px;right:-20px;width:64px;height:64px;
-           border-radius:50%;background:${secondary};opacity:.28;"></div>
+           border-radius:50%;background:${secondary};opacity:.18;"></div>
       <div>
         <div style="font-size:.62rem;font-weight:800;letter-spacing:.08em;
-             color:${secondary};text-transform:uppercase;margin-bottom:3px;
-             text-shadow:${shadow};">${brand}</div>
+             color:${secondary};text-transform:uppercase;margin-bottom:3px;">${brand}</div>
         <div style="width:18px;height:2px;background:${secondary};margin-bottom:6px;"></div>
-        <div style="font-size:.68rem;font-weight:700;color:${textColor};
-             line-height:1.3;text-shadow:${shadow};">${tagline}</div>
+        <div style="font-size:.68rem;font-weight:600;color:#111827;
+             line-height:1.3;">${tagline}</div>
       </div>
       <div>
         <span style="display:inline-block;background:${secondary};color:${ctaText};
