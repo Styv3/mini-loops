@@ -678,6 +678,7 @@ select { cursor: pointer; appearance: none; background-image: url("data:image/sv
   border: 1px solid var(--border);
   margin-bottom: 4px;
   box-shadow: var(--shadow-sm);
+  background: #111827;
 }
 
 /* ---- Font picker ---- */
