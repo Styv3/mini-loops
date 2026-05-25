@@ -793,8 +793,8 @@ select { cursor: pointer; appearance: none; background-image: url("data:image/sv
 
 .template-swatch { width: 20px; height: 20px; border-radius: 4px; flex-shrink: 0; }
 .template-info { min-width: 0; }
-.template-name { font-size: 0.77rem; font-weight: 600; color: var(--text); white-space: nowrap; }
-.template-hook { font-size: 0.64rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.template-name { font-size: 0.77rem; font-weight: 600; color: var(--text); white-space: normal; }
+.template-hook { font-size: 0.64rem; color: var(--text-muted); white-space: normal; }
 
 /* ---- Upload zones ---- */
 .upload-zone {
