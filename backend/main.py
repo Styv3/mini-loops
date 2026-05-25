@@ -30,7 +30,7 @@ class BrandConfig(BaseModel):
     tagline: str
     description: str
     cta: str
-    primary_color: str = "#1a1a2e"
+    primary_color: str = "#000000"
     secondary_color: str = "#e94560"
     sector: str = "autre"
 
@@ -177,7 +177,7 @@ def generate_single(
     tagline: str = "Your tagline here",
     description: str = "Short description of your product.",
     cta: str = "Shop Now",
-    primary_color: str = "#1a1a2e",
+    primary_color: str = "#000000",
     secondary_color: str = "#e94560",
     format_key: str = "feed",
     variant: int = 0,

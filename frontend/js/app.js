@@ -1093,7 +1093,7 @@ function updateColorPreview() {
   const brand   = $("#brand-name")?.value || "Brand";
   const tagline = $("#tagline")?.value   || "Your tagline here";
   const cta     = $("#cta")?.value       || "Shop Now";
-  const primary   = $("#primary-hex")?.value   || "#1a1a2e";
+  const primary   = $("#primary-hex")?.value   || "#000000";
   const secondary = $("#secondary-hex")?.value || "#e94560";
   const p = hexToRgb(primary), s = hexToRgb(secondary);
   if (!p || !s) return;
