@@ -1095,37 +1095,43 @@ function updateColorPreview() {
   const cta     = $("#cta")?.value       || "Shop Now";
   const primary   = $("#primary-hex")?.value   || "#1a1a2e";
   const secondary = $("#secondary-hex")?.value || "#e94560";
-  const textColor = relativeLuminance(hexToRgb(primary)) > 0.18 ? "#111111" : "#f5f5f5";
-  const ctaText   = relativeLuminance(hexToRgb(secondary)) > 0.18 ? "#111111" : "#ffffff";
+  const p = hexToRgb(primary), s = hexToRgb(secondary);
+  if (!p || !s) return;
+
+  const textColor = relativeLuminance(p) > 0.25 ? "#111111" : "#ffffff";
+  const ctaText   = relativeLuminance(s)  > 0.25 ? "#111111" : "#ffffff";
   const fontCss   = getFontCss();
 
-  // Match the Pillow gradient: primary → blend(primary, secondary, 0.55)
-  const p = hexToRgb(primary), s = hexToRgb(secondary);
-  const ge = `rgb(${Math.round(p.r+(s.r-p.r)*0.55)},${Math.round(p.g+(s.g-p.g)*0.55)},${Math.round(p.b+(s.b-p.b)*0.55)})`;
-  const mutedColor = `color-mix(in srgb, ${textColor} 55%, ${primary})`;
+  // Gradient end: blend primary 50% toward secondary
+  const ge = `rgb(${Math.round(p.r+(s.r-p.r)*0.5)},${Math.round(p.g+(s.g-p.g)*0.5)},${Math.round(p.b+(s.b-p.b)*0.5)})`;
+
+  // Set gradient directly on the outer element (safe fallback if inner div doesn't paint)
+  preview.style.background = `linear-gradient(150deg, ${primary}, ${ge})`;
+
+  // text-shadow ensures legibility on any background
+  const shadow = `0 1px 4px rgba(0,0,0,0.45)`;
 
   preview.innerHTML = `
     <div style="
-      width:100%;height:110px;
-      background:linear-gradient(160deg,${primary},${ge});
+      width:100%;min-height:110px;height:100%;
       padding:12px 14px;
       position:relative;overflow:hidden;
       display:flex;flex-direction:column;justify-content:space-between;
       font-family:${fontCss};
     ">
-      <div style="position:absolute;top:-28px;right:-28px;width:72px;height:72px;
-           border-radius:50%;background:${secondary};opacity:.22;"></div>
+      <div style="position:absolute;top:-20px;right:-20px;width:64px;height:64px;
+           border-radius:50%;background:${secondary};opacity:.28;"></div>
       <div>
-        <div style="font-size:.6rem;font-weight:800;letter-spacing:.08em;
-             color:${secondary};text-transform:uppercase;margin-bottom:2px;">${brand}</div>
-        <div style="width:20px;height:2px;background:${secondary};margin-bottom:5px;"></div>
-        <div style="font-size:.66rem;font-weight:700;color:${textColor};
-             line-height:1.25;overflow:hidden;display:-webkit-box;
-             -webkit-line-clamp:2;-webkit-box-orient:vertical;">${tagline}</div>
+        <div style="font-size:.62rem;font-weight:800;letter-spacing:.08em;
+             color:${secondary};text-transform:uppercase;margin-bottom:3px;
+             text-shadow:${shadow};">${brand}</div>
+        <div style="width:18px;height:2px;background:${secondary};margin-bottom:6px;"></div>
+        <div style="font-size:.68rem;font-weight:700;color:${textColor};
+             line-height:1.3;text-shadow:${shadow};">${tagline}</div>
       </div>
       <div>
         <span style="display:inline-block;background:${secondary};color:${ctaText};
-          font-size:.55rem;font-weight:700;padding:4px 10px;border-radius:20px;
+          font-size:.58rem;font-weight:700;padding:4px 10px;border-radius:20px;
           letter-spacing:.04em;text-transform:uppercase;">${cta}</span>
       </div>
     </div>`;
