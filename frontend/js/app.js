@@ -389,9 +389,12 @@ async function generateAds() {
     );
     results.forEach(([fmt, b64]) => { if (b64) bgImages[fmt] = b64; });
     const nOk = Object.keys(bgImages).length;
-    progress.update(0, nOk > 0
-      ? `${nOk} fond${nOk > 1 ? "s" : ""} IA prêt${nOk > 1 ? "s" : ""} — composition…`
-      : "Fonds IA indisponibles — mode couleurs activé");
+    if (nOk > 0) {
+      progress.update(0, `${nOk} fond${nOk > 1 ? "s" : ""} IA prêt${nOk > 1 ? "s" : ""} — composition…`);
+    } else {
+      // Browser prefetch failed entirely — backend will retry server-side
+      progress.update(0, "Service IA lent — le serveur tente de son côté…");
+    }
   }
 
   const payload = {
@@ -459,8 +462,24 @@ async function generateAds() {
     $("#btn-download-all").style.display = hasMany ? "inline-flex" : "none";
     $("#btn-download-zip").style.display = hasMany ? "inline-flex" : "none";
     $("#btn-mock-toggle").style.display = "inline-flex";
-    progress.update(totalAds, "Terminé !");
-    setTimeout(() => progress.hide(), 2000);
+
+    // Warn explicitly if AI was requested but some/all ads fell back to color
+    if (isAI) {
+      const fallbacks = state.ads.filter(ad => ad.source === "none").length;
+      if (fallbacks === state.ads.length) {
+        progress.update(totalAds, "⚠ Génération IA indisponible");
+        setStatus(status,
+          "Le service IA (Pollinations) est actuellement indisponible. Les visuels ont été générés en mode couleurs. Réessaie dans quelques minutes.",
+          "error");
+      } else {
+        progress.update(totalAds, fallbacks > 0 ? `Terminé (${fallbacks} en couleurs)` : "Terminé !");
+        if (fallbacks > 0) notify(`${fallbacks} visuel${fallbacks > 1 ? "s" : ""} en mode couleurs — IA partiellement indisponible`, "error");
+        setTimeout(() => progress.hide(), 2000);
+      }
+    } else {
+      progress.update(totalAds, "Terminé !");
+      setTimeout(() => progress.hide(), 2000);
+    }
 
     if (SUPABASE_OK) dbSaveAds(state.ads, config).catch(console.error);
   } catch (err) {
