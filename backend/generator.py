@@ -195,12 +195,16 @@ def fetch_background(sector: str, hint: str, width: int, height: int, source: st
     seed = random.randint(1, 99999)
 
     if source == "ai":
+        # Request at 512 px wide to keep generation under ~10 s, then upscale with Pillow.
+        # Full-res requests (1080×1080+) regularly exceed the 45 s timeout on Pollinations.
+        gen_w = 512
+        gen_h = max(256, round(gen_w * height / width))
         keywords = SECTOR_KEYWORDS.get(sector, SECTOR_KEYWORDS["autre"])
         style_suffix = STYLE_PROMPTS.get(style_preset, "professional advertisement photography, cinematic lighting, ultra high quality")
         prompt = f"{hint}, {keywords}, {style_suffix}"
         encoded = urllib.parse.quote(prompt)
         safe_model = ai_model if ai_model in ("flux", "flux-pro", "flux-realism", "turbo") else "flux"
-        url = f"https://image.pollinations.ai/prompt/{encoded}?width={width}&height={height}&nologo=true&model={safe_model}&seed={seed}"
+        url = f"https://image.pollinations.ai/prompt/{encoded}?width={gen_w}&height={gen_h}&nologo=true&model={safe_model}&seed={seed}"
     elif source == "stock":
         kw = SECTOR_FLICKR.get(sector, SECTOR_FLICKR["autre"])
         url = f"https://loremflickr.com/{width}/{height}/{kw}?lock={seed}"
@@ -214,7 +218,7 @@ def fetch_background(sector: str, hint: str, width: int, height: int, source: st
             data = resp.read()
         img = Image.open(io.BytesIO(data)).convert("RGB")
         result = img.resize((width, height), Image.LANCZOS)
-        print(f"[fetch_background] OK — {len(data)} bytes")
+        print(f"[fetch_background] OK — {len(data)} bytes, upscaled to {width}×{height}")
         return result
     except Exception as e:
         print(f"[fetch_background] ERREUR : {e}")
@@ -253,13 +257,15 @@ def generate_ad(
         bg = fetch_background(sector, f"{brand_name} {tagline}", width, height, image_source, ai_model, style_preset)
 
     if bg is not None:
-        img = _render_photo_layout(bg, width, height, brand_name, tagline, description, cta, primary, secondary, variant, custom_font)
+        # Random photo layout each call so repeat generations look different.
+        photo_lv = random.randint(0, 2)
+        img = _render_photo_layout(bg, width, height, brand_name, tagline, description, cta, primary, secondary, photo_lv, custom_font)
     else:
-        # Gradient background for all flat-color layouts
+        # Gradient background for all flat-color layouts — random so fallbacks vary too.
         grad_end = _blend(primary, secondary, 0.55)
         img = _gradient_bg(Image.new("RGB", (width, height)), primary, grad_end)
         draw = ImageDraw.Draw(img)
-        lv = variant % 4
+        lv = random.randint(0, 3)
         if lv == 0:
             _layout_centered(draw, width, height, brand_name, tagline, description, cta, primary, secondary, custom_font)
         elif lv == 1:

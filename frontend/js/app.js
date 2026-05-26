@@ -349,7 +349,7 @@ async function generateAds() {
 
   const isAI = state.imageSource === "ai";
   const totalAds = state.selectedFormats.length * state.variantsPerFormat;
-  const MODEL_TIMES = { "flux": 15, "flux-pro": 25, "flux-realism": 18, "turbo": 8 };
+  const MODEL_TIMES = { "flux": 8, "flux-pro": 18, "flux-realism": 12, "turbo": 5 };
   const secPerAd = MODEL_TIMES[state.aiModel] || 15;
   const timeoutMs = isAI ? totalAds * secPerAd * 2000 + 30000 : 60000;
 
