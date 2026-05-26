@@ -2288,6 +2288,13 @@ html[data-theme="light"] .empty-state strong {
   color: var(--text);
 }
 
+html[data-theme="light"] .roas-badge {
+  background: linear-gradient(135deg, #7c3aed 0%, #db2777 100%);
+  border-color: rgba(124,58,237,0.18);
+  color: #ffffff;
+  box-shadow: 0 14px 34px rgba(124,58,237,0.24);
+}
+
 html[data-theme="light"] .adblock-note {
   background: rgba(245,158,11,0.10);
   border-color: rgba(245,158,11,0.22);
