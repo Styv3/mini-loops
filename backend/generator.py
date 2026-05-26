@@ -256,7 +256,8 @@ def generate_ad(
     product_b64: str = "",        # PNG with alpha (removed bg), base64-encoded
     style_preset: str = "",       # "" | "luxury" | "minimal" | "bold" | "ugc"
     font_family: str = "",        # "" | "poppins" | "montserrat" | etc.
-) -> bytes:
+    background_b64: str = "",     # background pré-récupéré côté client (évite l'appel Pollinations)
+) -> tuple:
     width, height = AD_FORMATS.get(format_key, AD_FORMATS["feed"])
     primary = _hex_to_rgb(primary_color)
     secondary = _hex_to_rgb(secondary_color)
@@ -264,7 +265,18 @@ def generate_ad(
     custom_font = _get_custom_font_path(font_family)
 
     bg = None
-    if image_source in ("stock", "ai"):
+    # 1. Background pré-récupéré par le navigateur — prioritaire
+    if background_b64:
+        try:
+            data = base64.b64decode(background_b64)
+            prefetched = Image.open(io.BytesIO(data)).convert("RGB")
+            bg = prefetched.resize((width, height), Image.LANCZOS)
+            print(f"[generate_ad] used client-prefetched background for {format_key}")
+        except Exception as e:
+            print(f"[generate_ad] prefetched bg decode failed: {e}")
+
+    # 2. Fallback : récupération server-side (stock ou IA sans prefetch)
+    if bg is None and image_source in ("stock", "ai"):
         bg = fetch_background(sector, f"{brand_name} {tagline}", width, height, image_source, ai_model, style_preset)
 
     actual_source = image_source if bg is not None else "none"

@@ -44,6 +44,7 @@ class GenerateRequest(BrandConfig):
     product_b64: Optional[str] = ""        # PNG RGBA base64 (fond retiré)
     style_preset: Optional[str] = ""       # "" | "luxury" | "minimal" | "bold" | "ugc"
     font_family: Optional[str] = ""        # "" | "poppins" | "montserrat" | etc.
+    bg_images: Optional[dict] = {}         # format -> base64 PNG pré-récupéré côté client
 
 
 @app.get("/")
@@ -131,6 +132,7 @@ async def generate_stream(req: GenerateRequest):
             product_b64=req.product_b64 or "",
             style_preset=req.style_preset or "",
             font_family=req.font_family or "",
+            background_b64=(req.bg_images or {}).get(fmt, ""),
         )
 
     async def event_gen():

@@ -27,6 +27,43 @@ function showPage(name) {
 }
 
 // ---------------------------------------------------------------------------
+// AI background pre-fetch (browser → Pollinations, bypasses Railway IP limits)
+// ---------------------------------------------------------------------------
+const _SECTOR_KW = {
+    beaute:    "luxury beauty skincare cosmetics elegant woman glowing skin",
+    ecommerce: "product photography lifestyle modern minimal studio",
+    sante:     "health wellness nature green light fresh outdoors",
+    autre:     "modern business lifestyle abstract professional",
+};
+const _FMT_DIMS = { feed: [1080,1080], story: [1080,1920], banner: [1200,628] };
+
+async function prefetchAIBackground(config, format, aiModel) {
+    const [w, h] = _FMT_DIMS[format] || [1080, 1080];
+    const genH = Math.round(512 * h / w);
+    const seed = Math.floor(Math.random() * 99999);
+    const kw = _SECTOR_KW[config.sector] || _SECTOR_KW.autre;
+    const safeModel = ["flux","flux-pro","flux-realism","turbo"].includes(aiModel) ? aiModel : "flux";
+    const prompt = encodeURIComponent(`${config.brand_name} ${config.tagline}, ${kw}, professional advertisement photography, cinematic lighting`);
+    const url = `https://image.pollinations.ai/prompt/${prompt}?width=512&height=${genH}&nologo=true&model=${safeModel}&seed=${seed}&nofeed=true`;
+    try {
+        const res = await fetch(url, { signal: AbortSignal.timeout(25000) });
+        if (!res.ok) return null;
+        const ct = res.headers.get("content-type") || "";
+        if (!ct.startsWith("image/")) return null;
+        const blob = await res.blob();
+        return await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result.split(",")[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+    } catch (e) {
+        console.warn(`[AI prefetch] ${format}:`, e.message);
+        return null;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Backend health check
 // ---------------------------------------------------------------------------
 async function checkHealth() {
@@ -335,6 +372,28 @@ async function generateAds() {
 
   const config = getBrandConfig();
   saveBrandConfig();
+
+  const isAI = state.imageSource === "ai";
+  const totalAds = state.selectedFormats.length * state.variantsPerFormat;
+  const progress = showProgress(btn.closest(".card"), totalAds);
+
+  // Pre-fetch AI backgrounds from the browser so requests come from the user's IP
+  // (not Railway's), bypassing Pollinations rate-limits on cloud hosting IPs.
+  let bgImages = {};
+  if (isAI) {
+    progress.update(0, "Récupération des fonds IA…");
+    const results = await Promise.all(
+      state.selectedFormats.map(fmt =>
+        prefetchAIBackground(config, fmt, state.aiModel).then(b64 => [fmt, b64])
+      )
+    );
+    results.forEach(([fmt, b64]) => { if (b64) bgImages[fmt] = b64; });
+    const nOk = Object.keys(bgImages).length;
+    progress.update(0, nOk > 0
+      ? `${nOk} fond${nOk > 1 ? "s" : ""} IA prêt${nOk > 1 ? "s" : ""} — composition…`
+      : "Fonds IA indisponibles — mode couleurs activé");
+  }
+
   const payload = {
     ...config,
     formats: state.selectedFormats,
@@ -345,15 +404,15 @@ async function generateAds() {
     font_family: state.fontFamily || "",
     logo_b64: uploads.logo.b64 || "",
     product_b64: uploads.product.b64 || "",
+    bg_images: bgImages,
   };
 
-  const isAI = state.imageSource === "ai";
-  const totalAds = state.selectedFormats.length * state.variantsPerFormat;
   const MODEL_TIMES = { "flux": 8, "flux-pro": 18, "flux-realism": 12, "turbo": 5 };
-  const secPerAd = MODEL_TIMES[state.aiModel] || 15;
-  const timeoutMs = isAI ? totalAds * secPerAd * 2000 + 30000 : 60000;
-
-  const progress = showProgress(btn.closest(".card"), totalAds);
+  const secPerAd = MODEL_TIMES[state.aiModel] || 8;
+  // Backend ne fait que composer (pas d'attente Pollinations) quand bgImages fournis
+  const timeoutMs = isAI && Object.keys(bgImages).length > 0
+    ? totalAds * 5000 + 15000
+    : isAI ? totalAds * secPerAd * 2000 + 30000 : 60000;
 
   try {
     const controller = new AbortController();
