@@ -756,7 +756,6 @@ function _buildAdCard(ad, i) {
   card.dataset.format = ad.format;
   card.innerHTML = `
     <div class="ad-img-wrap">
-      <img src="data:image/png;base64,${ad.image_b64}" alt="${ad.format} v${ad.variant}" loading="lazy" />
       <span class="source-badge src-${ad.source}">${sourceLabel}</span>
       <button class="ad-zoom-btn" title="Aperçu plein écran">⤢</button>
       <button class="ad-regen-btn" title="Régénérer ce visuel">↺</button>
@@ -771,8 +770,16 @@ function _buildAdCard(ad, i) {
         <button class="btn btn-secondary btn-sm" title="Télécharger" onclick="downloadAd(${i})">↓</button>
       </div>
     </div>`;
+  const img = document.createElement("img");
+  img.alt = `${ad.format} v${ad.variant}`;
+  img.loading = "eager";
+  img.decoding = "async";
+  if (ad.width) img.width = ad.width;
+  if (ad.height) img.height = ad.height;
+  img.src = `data:image/png;base64,${ad.image_b64}`;
+  card.querySelector(".ad-img-wrap").prepend(img);
   card.querySelector(".ad-zoom-btn").addEventListener("click", () => openLightbox(i));
-  card.querySelector("img").addEventListener("click", () => openLightbox(i));
+  img.addEventListener("click", () => openLightbox(i));
   card.querySelector(".ad-regen-btn").addEventListener("click", () => regenAd(i));
   return card;
 }
