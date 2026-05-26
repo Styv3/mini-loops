@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Loops — Générateur de publicités IA</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%236366f1'/%3E%3Ctext x='32' y='42' text-anchor='middle' font-family='Arial,sans-serif' font-size='34' font-weight='800' fill='white'%3El%3C/text%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -21,15 +22,15 @@
       <button class="auth-tab active" data-tab="login">Connexion</button>
       <button class="auth-tab" data-tab="signup">Inscription</button>
     </div>
-    <div class="auth-form">
+    <form class="auth-form" id="auth-form">
       <input type="email" id="auth-email" placeholder="Email" autocomplete="email" />
       <input type="password" id="auth-password" placeholder="Mot de passe" autocomplete="current-password" />
       <input type="password" id="auth-new-password" placeholder="Nouveau mot de passe" autocomplete="new-password" style="display:none;" />
-      <button class="btn btn-primary" id="auth-submit">Se connecter</button>
+      <button type="submit" class="btn btn-primary" id="auth-submit">Se connecter</button>
       <a href="#" id="auth-forgot" class="auth-link">Mot de passe oublié ?</a>
       <a href="#" id="auth-back" class="auth-link" style="display:none;">← Retour à la connexion</a>
       <div id="auth-error" class="auth-error"></div>
-    </div>
+    </form>
   </div>
 </div>
 

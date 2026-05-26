@@ -69,7 +69,7 @@ async function prefetchAIBackground(config, format, aiModel) {
             reader.readAsDataURL(blob);
         });
     } catch (e) {
-        console.warn(`[AI prefetch] ${format}:`, e.message);
+        if (e.name !== "AbortError") console.warn(`[AI prefetch] ${format}:`, e.message);
         return null;
     }
 }
@@ -1247,7 +1247,8 @@ function setupAuthForm() {
     setMode("login");
   });
 
-  $("#auth-submit").addEventListener("click", async () => {
+  $("#auth-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
     const email    = $("#auth-email").value.trim();
     const password = $("#auth-password").value;
     const errEl    = $("#auth-error");
@@ -1293,12 +1294,6 @@ function setupAuthForm() {
       btn.disabled = false;
       btn.textContent = LABELS[mode] || LABELS.login;
     }
-  });
-
-  ["auth-email", "auth-password", "auth-new-password"].forEach(id => {
-    $(`#${id}`).addEventListener("keydown", e => {
-      if (e.key === "Enter") $("#auth-submit").click();
-    });
   });
 }
 
