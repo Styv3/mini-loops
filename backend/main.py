@@ -84,7 +84,7 @@ def generate(req: GenerateRequest):
         if fmt not in AD_FORMATS:
             raise HTTPException(status_code=400, detail=f"Format inconnu : {fmt}")
         for v in range(req.variants_per_format):
-            png_bytes = generate_ad(
+            png_bytes, used_source = generate_ad(
                 brand_name=req.brand_name,
                 tagline=req.tagline,
                 description=req.description,
@@ -107,6 +107,7 @@ def generate(req: GenerateRequest):
                 "width": AD_FORMATS[fmt][0],
                 "height": AD_FORMATS[fmt][1],
                 "image_b64": base64.b64encode(png_bytes).decode(),
+                "used_source": used_source,
             })
     return {"ads": results, "total": len(results)}
 
@@ -137,12 +138,13 @@ async def generate_stream(req: GenerateRequest):
         for fmt in formats:
             for v in range(vpf):
                 try:
-                    png = await asyncio.to_thread(generate_ad, **_build_kwargs(fmt, v))
+                    png, used_source = await asyncio.to_thread(generate_ad, **_build_kwargs(fmt, v))
                     done += 1
                     payload = json.dumps({
                         "format": fmt, "variant": v + 1,
                         "width": AD_FORMATS[fmt][0], "height": AD_FORMATS[fmt][1],
                         "image_b64": base64.b64encode(png).decode(),
+                        "used_source": used_source,
                         "done": done, "total": total,
                     })
                 except Exception as e:
@@ -184,7 +186,7 @@ def generate_single(
 ):
     if format_key not in AD_FORMATS:
         raise HTTPException(status_code=400, detail=f"Format inconnu : {format_key}")
-    png_bytes = generate_ad(
+    png_bytes, _ = generate_ad(
         brand_name=brand_name,
         tagline=tagline,
         description=description,

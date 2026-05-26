@@ -384,7 +384,7 @@ async function generateAds() {
         try {
           const ad = JSON.parse(raw);
           if (ad.error) { console.warn("[stream]", ad.error); continue; }
-          ad.source = state.imageSource;
+          ad.source = ad.used_source ?? state.imageSource;
           state.ads.push(ad);
           appendAd(ad, state.ads.length - 1);
           progress.update(ad.done, `${ad.done} / ${ad.total} visuel${ad.done > 1 ? "s" : ""} généré${ad.done > 1 ? "s" : ""}`);
@@ -509,7 +509,7 @@ async function regenAd(index) {
         try {
           const newAd = JSON.parse(raw);
           if (newAd.error || !newAd.image_b64) continue;
-          newAd.source = state.imageSource;
+          newAd.source = newAd.used_source ?? state.imageSource;
           newAd.variant = ad.variant;
           state.ads[index] = newAd;
           const newCard = _buildAdCard(newAd, index);

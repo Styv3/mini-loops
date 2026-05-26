@@ -192,11 +192,7 @@ def _apply_overlay(img: Image.Image, primary: tuple, opacity: int = 160) -> Imag
 # ---------------------------------------------------------------------------
 
 def fetch_background(sector: str, hint: str, width: int, height: int, source: str = "ai", ai_model: str = "flux", style_preset: str = "") -> Image.Image | None:
-    seed = random.randint(1, 99999)
-
     if source == "ai":
-        # Request at 512 px wide to keep generation under ~10 s, then upscale with Pillow.
-        # Full-res requests (1080×1080+) regularly exceed the 45 s timeout on Pollinations.
         gen_w = 512
         gen_h = max(256, round(gen_w * height / width))
         keywords = SECTOR_KEYWORDS.get(sector, SECTOR_KEYWORDS["autre"])
@@ -204,25 +200,40 @@ def fetch_background(sector: str, hint: str, width: int, height: int, source: st
         prompt = f"{hint}, {keywords}, {style_suffix}"
         encoded = urllib.parse.quote(prompt)
         safe_model = ai_model if ai_model in ("flux", "flux-pro", "flux-realism", "turbo") else "flux"
-        url = f"https://image.pollinations.ai/prompt/{encoded}?width={gen_w}&height={gen_h}&nologo=true&model={safe_model}&seed={seed}"
-    elif source == "stock":
-        kw = SECTOR_FLICKR.get(sector, SECTOR_FLICKR["autre"])
-        url = f"https://loremflickr.com/{width}/{height}/{kw}?lock={seed}"
-    else:
+
+        # Retry up to 3 times — Pollinations queues requests and is occasionally slow.
+        for attempt in range(3):
+            seed = random.randint(1, 99999)
+            url = f"https://image.pollinations.ai/prompt/{encoded}?width={gen_w}&height={gen_h}&nologo=true&model={safe_model}&seed={seed}&nofeed=true"
+            print(f"[fetch_background] AI attempt {attempt+1}/3 {url[:80]}...")
+            try:
+                req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+                with urllib.request.urlopen(req, timeout=20) as resp:
+                    data = resp.read()
+                img = Image.open(io.BytesIO(data)).convert("RGB")
+                result = img.resize((width, height), Image.LANCZOS)
+                print(f"[fetch_background] OK attempt {attempt+1} — {len(data)} bytes")
+                return result
+            except Exception as e:
+                print(f"[fetch_background] attempt {attempt+1} failed: {e}")
         return None
 
-    print(f"[fetch_background] source={source} url={url[:80]}...")
-    try:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req, timeout=45) as resp:
-            data = resp.read()
-        img = Image.open(io.BytesIO(data)).convert("RGB")
-        result = img.resize((width, height), Image.LANCZOS)
-        print(f"[fetch_background] OK — {len(data)} bytes, upscaled to {width}×{height}")
-        return result
-    except Exception as e:
-        print(f"[fetch_background] ERREUR : {e}")
-        return None
+    elif source == "stock":
+        seed = random.randint(1, 99999)
+        kw = SECTOR_FLICKR.get(sector, SECTOR_FLICKR["autre"])
+        url = f"https://loremflickr.com/{width}/{height}/{kw}?lock={seed}"
+        print(f"[fetch_background] stock {url[:80]}...")
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                data = resp.read()
+            img = Image.open(io.BytesIO(data)).convert("RGB")
+            return img.resize((width, height), Image.LANCZOS)
+        except Exception as e:
+            print(f"[fetch_background] stock failed: {e}")
+            return None
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -256,6 +267,8 @@ def generate_ad(
     if image_source in ("stock", "ai"):
         bg = fetch_background(sector, f"{brand_name} {tagline}", width, height, image_source, ai_model, style_preset)
 
+    actual_source = image_source if bg is not None else "none"
+
     if bg is not None:
         # Overlay (0) and split (1) both work well across palettes; frame (2) is excluded
         # for now because its border color clashes with saturated secondaries.
@@ -284,7 +297,7 @@ def generate_ad(
     buf = io.BytesIO()
     img.save(buf, format="PNG", optimize=True)
     buf.seek(0)
-    return buf.read()
+    return buf.read(), actual_source
 
 
 def _decode_b64_image(b64: str) -> Image.Image | None:
