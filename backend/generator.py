@@ -6,6 +6,7 @@ import urllib.request
 import urllib.parse
 import random
 import glob as _glob
+import subprocess
 
 AD_FORMATS = {
     "feed":   (1080, 1080),
@@ -55,24 +56,62 @@ def _contrast_color(bg_rgb: tuple) -> tuple:
 
 def _find_system_font() -> str | None:
     """Locate a usable TTF font on Windows, Linux, or Nix environments."""
-    direct = ["arialbd.ttf", "arial.ttf", "DejaVuSans-Bold.ttf", "DejaVuSans.ttf"]
+    direct = [
+        "arialbd.ttf",
+        "arial.ttf",
+        "DejaVuSans-Bold.ttf",
+        "DejaVuSans.ttf",
+        "LiberationSans-Bold.ttf",
+        "LiberationSans-Regular.ttf",
+        "NotoSans-Bold.ttf",
+        "NotoSans-Regular.ttf",
+    ]
     for name in direct:
         try:
             ImageFont.truetype(name, 12)
             return name
         except Exception:
             pass
+
+    try:
+        result = subprocess.run(
+            ["fc-match", "-f", "%{file}", "DejaVu Sans:style=Bold"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+        path = result.stdout.strip()
+        if path and os.path.exists(path):
+            return path
+    except Exception:
+        pass
+
     patterns = [
+        "/app/backend/fonts/*.ttf",
+        "/app/fonts/*.ttf",
+        os.path.join(os.path.dirname(__file__), "fonts", "*.ttf"),
         "/nix/store/*/share/fonts/truetype/DejaVuSans-Bold.ttf",
         "/nix/store/*/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/nix/store/*/share/fonts/truetype/ttf-dejavu/DejaVuSans-Bold.ttf",
+        "/nix/store/*/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/nix/store/*/share/fonts/truetype/noto/NotoSans-Bold.ttf",
+        "/nix/store/*/share/fonts/**/*.ttf",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/truetype/noto/NotoSans-Bold.ttf",
         "/usr/share/fonts/truetype/DejaVuSans-Bold.ttf",
         "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
     ]
     for pattern in patterns:
-        matches = _glob.glob(pattern)
-        if matches:
-            return matches[0]
+        matches = _glob.glob(pattern, recursive=True)
+        preferred = [m for m in matches if os.path.basename(m) in direct]
+        for path in preferred + matches:
+            try:
+                ImageFont.truetype(path, 12)
+                return path
+            except Exception:
+                pass
     return None
 
 _SYSTEM_FONT = _find_system_font()
@@ -120,7 +159,7 @@ def _get_custom_font_path(font_family: str) -> str | None:
 
 
 def _load_font(size: int, custom_path: str | None = None):
-    path = custom_path or _SYSTEM_FONT
+    path = custom_path or _SYSTEM_FONT or _get_custom_font_path("poppins")
     if path:
         try:
             return ImageFont.truetype(path, size)

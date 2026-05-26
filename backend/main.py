@@ -54,8 +54,13 @@ def root():
 
 @app.get("/debug/font")
 def debug_font():
-    from generator import _SYSTEM_FONT
-    return {"system_font": _SYSTEM_FONT}
+    from generator import _SYSTEM_FONT, _load_font
+    font = _load_font(12)
+    return {
+        "system_font": _SYSTEM_FONT,
+        "active_font": getattr(font, "path", None),
+        "font_class": font.__class__.__name__,
+    }
 
 
 @app.get("/formats")
