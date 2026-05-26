@@ -39,7 +39,7 @@ class GenerateRequest(BrandConfig):
     formats: Optional[list[str]] = ["feed", "story", "banner"]
     variants_per_format: Optional[int] = 2
     image_source: Optional[str] = "none"   # "none" | "stock" | "ai"
-    ai_model: Optional[str] = "flux"       # "flux" | "flux-pro" | "flux-realism" | "turbo"
+    ai_model: Optional[str] = "sana"       # free Pollinations legacy image model
     logo_b64: Optional[str] = ""           # PNG RGBA base64
     product_b64: Optional[str] = ""        # PNG RGBA base64 (fond retiré)
     style_preset: Optional[str] = ""       # "" | "luxury" | "minimal" | "bold" | "ugc"
@@ -101,7 +101,7 @@ def generate(req: GenerateRequest):
                 format_key=fmt,
                 variant=v,
                 image_source=req.image_source or "none",
-                ai_model=req.ai_model or "flux",
+                ai_model=req.ai_model or "sana",
                 logo_b64=req.logo_b64 or "",
                 product_b64=req.product_b64 or "",
                 style_preset=req.style_preset or "",
@@ -133,7 +133,7 @@ async def generate_stream(req: GenerateRequest):
             primary_color=req.primary_color, secondary_color=req.secondary_color,
             sector=req.sector, format_key=fmt, variant=v,
             image_source=req.image_source or "none",
-            ai_model=req.ai_model or "flux",
+            ai_model=req.ai_model or "sana",
             logo_b64=req.logo_b64 or "",
             product_b64=req.product_b64 or "",
             style_preset=req.style_preset or "",

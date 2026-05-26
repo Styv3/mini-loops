@@ -5,7 +5,7 @@ const state = {
   formats: ["feed", "story", "banner"],
   selectedFormats: ["feed"],
   imageSource: "none",
-  aiModel: "flux",
+  aiModel: "sana",
   stylePreset: "",
   fontFamily: "",
   variantsPerFormat: 1,
@@ -47,13 +47,18 @@ const _SECTOR_KW = {
     autre:     "modern business lifestyle abstract professional",
 };
 const _FMT_DIMS = { feed: [1080,1080], story: [1080,1920], banner: [1200,628] };
+const POLLINATIONS_FREE_MODEL = "sana";
+
+function _normalizeAIModel(model) {
+  return model === POLLINATIONS_FREE_MODEL ? model : POLLINATIONS_FREE_MODEL;
+}
 
 async function prefetchAIBackground(config, format, aiModel) {
     const [w, h] = _FMT_DIMS[format] || [1080, 1080];
     const genH = Math.round(512 * h / w);
     const seed = Math.floor(Math.random() * 99999);
     const kw = _SECTOR_KW[config.sector] || _SECTOR_KW.autre;
-    const safeModel = ["flux","flux-pro","flux-realism","turbo"].includes(aiModel) ? aiModel : "flux";
+    const safeModel = _normalizeAIModel(aiModel);
     const prompt = encodeURIComponent(`${config.brand_name} ${config.tagline}, ${kw}, professional advertisement photography, cinematic lighting`);
     const url = `https://image.pollinations.ai/prompt/${prompt}?width=512&height=${genH}&nologo=true&model=${safeModel}&seed=${seed}&nofeed=true`;
     try {
@@ -237,7 +242,7 @@ function saveBrandConfig() {
     sector:          $("#sector").value,
     selectedFormats:    state.selectedFormats,
     imageSource:        state.imageSource,
-    aiModel:            state.aiModel,
+    aiModel:            _normalizeAIModel(state.aiModel),
     stylePreset:        state.stylePreset,
     fontFamily:         state.fontFamily,
     variantsPerFormat:  state.variantsPerFormat,
@@ -279,7 +284,7 @@ function applyConfig(cfg) {
     _updateAILimitUI();
   }
   if (cfg.aiModel) {
-    state.aiModel = cfg.aiModel;
+    state.aiModel = _normalizeAIModel(cfg.aiModel);
     $$(".model-btn").forEach(b => b.classList.toggle("selected", b.dataset.model === state.aiModel));
   }
   if (cfg.stylePreset !== undefined) {
@@ -397,10 +402,7 @@ function initSourceButtons() {
 // Model selector
 // ---------------------------------------------------------------------------
 const MODELS = [
-  { key: "flux",         icon: "⚡", label: "Schnell",  desc: "Rapide" },
-  { key: "flux-pro",     icon: "✦",  label: "Pro",      desc: "Qualité" },
-  { key: "flux-realism", icon: "📸", label: "Réaliste", desc: "Photo" },
-  { key: "turbo",        icon: "🚀", label: "Turbo",    desc: "Ultra" },
+  { key: "sana", icon: "✦", label: "Sana", desc: "Gratuit" },
 ];
 
 function initModelButtons() {
@@ -415,7 +417,7 @@ function initModelButtons() {
     btn.addEventListener("click", () => {
       $$(".model-btn").forEach(b => b.classList.remove("selected"));
       btn.classList.add("selected");
-      state.aiModel = key;
+      state.aiModel = _normalizeAIModel(key);
       saveBrandConfig();
     });
     grid.appendChild(btn);
@@ -653,7 +655,7 @@ async function generateAds() {
     formats: state.selectedFormats,
     variants_per_format: state.variantsPerFormat,
     image_source: state.imageSource,
-    ai_model: state.aiModel,
+    ai_model: _normalizeAIModel(state.aiModel),
     style_preset: state.stylePreset,
     font_family: state.fontFamily || "",
     logo_b64: uploads.logo.b64 || "",
@@ -661,8 +663,8 @@ async function generateAds() {
     bg_images: bgImages,
   };
 
-  const MODEL_TIMES = { "flux": 8, "flux-pro": 18, "flux-realism": 12, "turbo": 5 };
-  const secPerAd = MODEL_TIMES[state.aiModel] || 8;
+  const MODEL_TIMES = { "sana": 12 };
+  const secPerAd = MODEL_TIMES[_normalizeAIModel(state.aiModel)] || 12;
   const missingAIBackgrounds = isAI
     ? state.selectedFormats.filter(fmt => !bgImages[fmt]).length * state.variantsPerFormat
     : 0;
@@ -813,7 +815,7 @@ async function regenAd(index) {
     formats: [ad.format],
     variants_per_format: 1,
     image_source: state.imageSource,
-    ai_model: state.aiModel,
+    ai_model: _normalizeAIModel(state.aiModel),
     style_preset: state.stylePreset,
     font_family: state.fontFamily || "",
     logo_b64: uploads.logo.b64 || "",
@@ -1516,7 +1518,7 @@ function saveBrandKit() {
     ...getBrandConfig(),
     selectedFormats: state.selectedFormats,
     imageSource: state.imageSource,
-    aiModel: state.aiModel,
+    aiModel: _normalizeAIModel(state.aiModel),
     stylePreset: state.stylePreset,
     variantsPerFormat: state.variantsPerFormat,
   };

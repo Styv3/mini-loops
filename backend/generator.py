@@ -230,7 +230,14 @@ def _apply_overlay(img: Image.Image, primary: tuple, opacity: int = 160) -> Imag
 # Image fetching
 # ---------------------------------------------------------------------------
 
-def fetch_background(sector: str, hint: str, width: int, height: int, source: str = "ai", ai_model: str = "flux", style_preset: str = "") -> Image.Image | None:
+POLLINATIONS_FREE_MODEL = "sana"
+
+
+def _normalize_ai_model(model: str) -> str:
+    return POLLINATIONS_FREE_MODEL if model != POLLINATIONS_FREE_MODEL else model
+
+
+def fetch_background(sector: str, hint: str, width: int, height: int, source: str = "ai", ai_model: str = POLLINATIONS_FREE_MODEL, style_preset: str = "") -> Image.Image | None:
     if source == "ai":
         gen_w = 512
         gen_h = max(256, round(gen_w * height / width))
@@ -238,7 +245,7 @@ def fetch_background(sector: str, hint: str, width: int, height: int, source: st
         style_suffix = STYLE_PROMPTS.get(style_preset, "professional advertisement photography, cinematic lighting, ultra high quality")
         prompt = f"{hint}, {keywords}, {style_suffix}"
         encoded = urllib.parse.quote(prompt)
-        safe_model = ai_model if ai_model in ("flux", "flux-pro", "flux-realism", "turbo") else "flux"
+        safe_model = _normalize_ai_model(ai_model)
 
         # Retry up to 3 times — Pollinations queues requests and is occasionally slow.
         for attempt in range(3):
@@ -290,7 +297,7 @@ def generate_ad(
     format_key: str = "feed",
     variant: int = 0,
     image_source: str = "none",   # "none" | "stock" | "ai"
-    ai_model: str = "flux",
+    ai_model: str = POLLINATIONS_FREE_MODEL,
     logo_b64: str = "",           # PNG with alpha, base64-encoded
     product_b64: str = "",        # PNG with alpha (removed bg), base64-encoded
     style_preset: str = "",       # "" | "luxury" | "minimal" | "bold" | "ugc"
