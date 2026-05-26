@@ -22,6 +22,13 @@ const _ai = { used: 0, cooldownUntil: 0, _tick: null };
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
+// AbortSignal.timeout() n'est pas supporté sur Safari < 16 — polyfill compatible
+function _abortTimeout(ms) {
+  const ctrl = new AbortController();
+  setTimeout(() => ctrl.abort(), ms);
+  return ctrl.signal;
+}
+
 // ---------------------------------------------------------------------------
 // Navigation
 // ---------------------------------------------------------------------------
@@ -50,7 +57,7 @@ async function prefetchAIBackground(config, format, aiModel) {
     const prompt = encodeURIComponent(`${config.brand_name} ${config.tagline}, ${kw}, professional advertisement photography, cinematic lighting`);
     const url = `https://image.pollinations.ai/prompt/${prompt}?width=512&height=${genH}&nologo=true&model=${safeModel}&seed=${seed}&nofeed=true`;
     try {
-        const res = await fetch(url, { signal: AbortSignal.timeout(25000) });
+        const res = await fetch(url, { signal: _abortTimeout(25000) });
         if (!res.ok) return null;
         const ct = res.headers.get("content-type") || "";
         if (!ct.startsWith("image/")) return null;
@@ -180,7 +187,7 @@ async function checkHealth() {
   dot.className = "health-dot";
   dot.title = "Connexion au serveur…";
   try {
-    const r = await fetch(`${API}/`, { signal: AbortSignal.timeout(10000) });
+    const r = await fetch(`${API}/`, { signal: _abortTimeout(10000) });
     if (r.ok) {
       dot.className = "health-dot online";
       dot.title = "Serveur actif";
@@ -708,7 +715,7 @@ async function regenAd(index) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(60000),
+      signal: _abortTimeout(60000),
     });
     if (!res.ok) throw new Error(await res.text());
 
