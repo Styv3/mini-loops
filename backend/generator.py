@@ -257,8 +257,9 @@ def generate_ad(
         bg = fetch_background(sector, f"{brand_name} {tagline}", width, height, image_source, ai_model, style_preset)
 
     if bg is not None:
-        # Random photo layout each call so repeat generations look different.
-        photo_lv = random.randint(0, 2)
+        # Overlay (0) and split (1) both work well across palettes; frame (2) is excluded
+        # for now because its border color clashes with saturated secondaries.
+        photo_lv = random.randint(0, 1)
         img = _render_photo_layout(bg, width, height, brand_name, tagline, description, cta, primary, secondary, photo_lv, custom_font)
     else:
         # Gradient background for all flat-color layouts — random so fallbacks vary too.
@@ -458,8 +459,9 @@ def _photo_frame(bg, w, h, brand, tagline, desc, cta, primary, secondary, cf=Non
     card = Image.new("RGBA", (card_w, card_h), (*primary, 210))
     img.paste(Image.alpha_composite(img.crop((pad_x, pad_y, pad_x + card_w, pad_y + card_h)).convert("RGBA"), card).convert("RGB"), (pad_x, pad_y))
 
-    # Border
-    draw.rounded_rectangle([pad_x, pad_y, pad_x + card_w, pad_y + card_h], radius=16, outline=secondary, width=3)
+    # Subtle border — blend secondary toward white to avoid jarring saturated outlines
+    border_color = _blend(secondary, (220, 220, 220), 0.45)
+    draw.rounded_rectangle([pad_x, pad_y, pad_x + card_w, pad_y + card_h], radius=16, outline=border_color, width=1)
 
     # Accent top bar inside card
     draw.rounded_rectangle([pad_x, pad_y, pad_x + card_w, pad_y + int(h * 0.007)], radius=4, fill=secondary)
