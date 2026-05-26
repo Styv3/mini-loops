@@ -4,6 +4,18 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Loops — Générateur de publicités IA</title>
+  <script>
+    (() => {
+      try {
+        const theme = localStorage.getItem("loops_theme") === "light" ? "light" : "dark";
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.colorScheme = theme;
+      } catch {
+        document.documentElement.dataset.theme = "dark";
+        document.documentElement.style.colorScheme = "dark";
+      }
+    })();
+  </script>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%236366f1'/%3E%3Ctext x='32' y='42' text-anchor='middle' font-family='Arial,sans-serif' font-size='34' font-weight='800' fill='white'%3El%3C/text%3E%3C/svg%3E" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -15,6 +27,15 @@
 <!-- Auth overlay -->
 <div id="auth-overlay" class="auth-overlay" style="display:none;">
   <div class="auth-card">
+    <button class="theme-toggle theme-toggle-auth" type="button" data-theme-toggle aria-label="Passer en mode clair" title="Mode clair">
+      <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="4"></circle>
+        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+      </svg>
+      <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"></path>
+      </svg>
+    </button>
     <div class="logo" style="margin-bottom:24px;font-size:1.9rem;">loops<span>.</span></div>
     <h2 class="auth-title">Bienvenue</h2>
     <p class="auth-sub">Connecte-toi pour sauvegarder tes créations</p>
@@ -56,6 +77,15 @@
     <button data-page="analyze">Analyse</button>
   </nav>
   <div class="header-right">
+    <button class="theme-toggle" type="button" data-theme-toggle aria-label="Passer en mode clair" title="Mode clair">
+      <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="4"></circle>
+        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+      </svg>
+      <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79Z"></path>
+      </svg>
+    </button>
     <div id="header-user"></div>
     <div id="health-dot" class="health-dot" title="Vérification…"></div>
   </div>
@@ -123,12 +153,22 @@
 
             <div class="field">
               <label>Secteur</label>
-              <select id="sector">
-                <option value="beaute">Beauté</option>
-                <option value="ecommerce">E-commerce</option>
-                <option value="sante">Santé</option>
-                <option value="autre">Autre</option>
-              </select>
+              <input type="hidden" id="sector" value="beaute" />
+              <div class="sector-picker" id="sector-picker">
+                <button class="sector-trigger" type="button" id="sector-trigger" aria-haspopup="listbox" aria-expanded="false">
+                  <span id="sector-trigger-label">Beauté</span>
+                  <span class="sector-trigger-icon">⌄</span>
+                </button>
+                <div class="sector-menu" id="sector-menu" role="listbox">
+                  <button class="sector-option selected" type="button" role="option" data-sector="beaute" aria-selected="true">Beauté</button>
+                  <button class="sector-option" type="button" role="option" data-sector="ecommerce" aria-selected="false">E-commerce</button>
+                  <button class="sector-option" type="button" role="option" data-sector="sante" aria-selected="false">Santé</button>
+                  <button class="sector-option" type="button" role="option" data-sector="autre" aria-selected="false">Autre</button>
+                </div>
+              </div>
+              <div class="sector-custom-wrap" id="sector-custom-wrap" style="display:none;">
+                <input type="text" id="sector-custom" placeholder="Ex : Food, SaaS B2B, immobilier…" autocomplete="off" />
+              </div>
             </div>
 
             <div class="field">
@@ -168,6 +208,20 @@
                 <div class="style-btn" data-style="ugc">
                   <span class="style-icon">◉</span>
                   <span class="style-label">UGC</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="field">
+              <label>Composition photo</label>
+              <div id="photo-layout-grid" class="photo-layout-grid">
+                <div class="photo-layout-btn selected" data-photo-layout="overlay">
+                  <span class="photo-layout-icon">▣</span>
+                  <span class="photo-layout-label">Image complète</span>
+                </div>
+                <div class="photo-layout-btn" data-photo-layout="split">
+                  <span class="photo-layout-icon">◧</span>
+                  <span class="photo-layout-label">Séparation</span>
                 </div>
               </div>
             </div>
@@ -276,6 +330,11 @@
           </div>
         </div>
 
+        <div class="adblock-note">
+          <span class="adblock-note-icon">!</span>
+          <span>Si les visuels générés ne s’affichent pas, désactive ton bloqueur de pub sur cette page.</span>
+        </div>
+
         <div id="ads-grid">
           <div class="empty-state">
             <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
@@ -283,8 +342,7 @@
               <circle cx="8.5" cy="8.5" r="1.5"/>
               <polyline points="21 15 16 10 5 21"/>
             </svg>
-            <p>Remplis les champs à gauche et clique sur<br/><strong>Générer les publicités</strong><br/>
-            <span style="font-size:0.8rem;margin-top:4px;display:block;">Ctrl + Entrée pour générer rapidement</span></p>
+            <p>Ton prochain lot de créations apparaîtra ici.<br/><strong>Générer les publicités</strong></p>
           </div>
         </div>
 

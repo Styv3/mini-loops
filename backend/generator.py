@@ -301,6 +301,7 @@ def generate_ad(
     logo_b64: str = "",           # PNG with alpha, base64-encoded
     product_b64: str = "",        # PNG with alpha (removed bg), base64-encoded
     style_preset: str = "",       # "" | "luxury" | "minimal" | "bold" | "ugc"
+    photo_layout: str = "overlay", # "overlay" | "split"
     font_family: str = "",        # "" | "poppins" | "montserrat" | etc.
     background_b64: str = "",     # background pré-récupéré côté client (évite l'appel Pollinations)
 ) -> tuple:
@@ -328,9 +329,9 @@ def generate_ad(
     actual_source = image_source if bg is not None else "none"
 
     if bg is not None:
-        # Overlay (0) and split (1) both work well across palettes; frame (2) is excluded
-        # for now because its border color clashes with saturated secondaries.
-        photo_lv = random.randint(0, 1)
+        # The frame layout is still excluded because its border color clashes with
+        # saturated secondaries. The user now explicitly chooses overlay vs split.
+        photo_lv = 1 if photo_layout == "split" else 0
         img = _render_photo_layout(bg, width, height, brand_name, tagline, description, cta, primary, secondary, photo_lv, custom_font)
     else:
         # Gradient background for all flat-color layouts — random so fallbacks vary too.

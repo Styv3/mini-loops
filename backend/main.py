@@ -43,6 +43,7 @@ class GenerateRequest(BrandConfig):
     logo_b64: Optional[str] = ""           # PNG RGBA base64
     product_b64: Optional[str] = ""        # PNG RGBA base64 (fond retiré)
     style_preset: Optional[str] = ""       # "" | "luxury" | "minimal" | "bold" | "ugc"
+    photo_layout: Optional[str] = "overlay"  # "overlay" | "split"
     font_family: Optional[str] = ""        # "" | "poppins" | "montserrat" | etc.
     bg_images: Optional[dict] = {}         # format -> base64 PNG pré-récupéré côté client
 
@@ -105,6 +106,7 @@ def generate(req: GenerateRequest):
                 logo_b64=req.logo_b64 or "",
                 product_b64=req.product_b64 or "",
                 style_preset=req.style_preset or "",
+                photo_layout=req.photo_layout or "overlay",
                 font_family=req.font_family or "",
                 background_b64=(req.bg_images or {}).get(fmt, ""),
             )
@@ -137,6 +139,7 @@ async def generate_stream(req: GenerateRequest):
             logo_b64=req.logo_b64 or "",
             product_b64=req.product_b64 or "",
             style_preset=req.style_preset or "",
+            photo_layout=req.photo_layout or "overlay",
             font_family=req.font_family or "",
             background_b64=(req.bg_images or {}).get(fmt, ""),
         )

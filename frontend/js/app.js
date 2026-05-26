@@ -7,6 +7,7 @@ const state = {
   imageSource: "none",
   aiModel: "sana",
   stylePreset: "",
+  photoLayout: "overlay",
   fontFamily: "",
   variantsPerFormat: 1,
   mockMode: false,
@@ -18,9 +19,45 @@ const state = {
 const AI_SESSION_LIMIT = 2;
 const AI_COOLDOWN_MS = 2 * 60 * 1000;
 const _ai = { used: 0, cooldownUntil: 0, _tick: null };
+const SECTOR_OPTIONS = [
+  { key: "beaute", label: "Beauté" },
+  { key: "ecommerce", label: "E-commerce" },
+  { key: "sante", label: "Santé" },
+  { key: "autre", label: "Autre" },
+];
 
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
+const THEME_KEY = "loops_theme";
+
+function _currentTheme() {
+  return document.documentElement.dataset.theme === "light" ? "light" : "dark";
+}
+
+function _syncThemeButtons() {
+  const theme = _currentTheme();
+  const next = theme === "dark" ? "light" : "dark";
+  $$("[data-theme-toggle]").forEach(btn => {
+    btn.setAttribute("aria-label", next === "light" ? "Passer en mode clair" : "Passer en mode sombre");
+    btn.title = next === "light" ? "Mode clair" : "Mode sombre";
+  });
+}
+
+function setTheme(theme) {
+  const next = theme === "light" ? "light" : "dark";
+  document.documentElement.dataset.theme = next;
+  document.documentElement.style.colorScheme = next;
+  try { localStorage.setItem(THEME_KEY, next); } catch {}
+  _syncThemeButtons();
+  updateColorPreview();
+}
+
+function initThemeToggle() {
+  _syncThemeButtons();
+  $$("[data-theme-toggle]").forEach(btn => {
+    btn.addEventListener("click", () => setTheme(_currentTheme() === "dark" ? "light" : "dark"));
+  });
+}
 
 // AbortSignal.timeout() n'est pas supporté sur Safari < 16 — polyfill compatible
 function _abortTimeout(ms) {
@@ -240,10 +277,12 @@ function saveBrandConfig() {
     primary_color:   $("#primary-hex").value,
     secondary_color: $("#secondary-hex").value,
     sector:          $("#sector").value,
+    sectorCustom:    $("#sector-custom")?.value.trim() || "",
     selectedFormats:    state.selectedFormats,
     imageSource:        state.imageSource,
     aiModel:            _normalizeAIModel(state.aiModel),
     stylePreset:        state.stylePreset,
+    photoLayout:        state.photoLayout,
     fontFamily:         state.fontFamily,
     variantsPerFormat:  state.variantsPerFormat,
   };
@@ -262,7 +301,7 @@ function applyConfig(cfg) {
   if (cfg.tagline)       $("#tagline").value        = cfg.tagline;
   if (cfg.description)   $("#description").value    = cfg.description;
   if (cfg.cta)           $("#cta").value            = cfg.cta;
-  if (cfg.sector)        $("#sector").value         = cfg.sector;
+  if (cfg.sector)        setSectorValue(cfg.sector, cfg.sectorCustom || cfg.sector_custom || "");
   if (cfg.primary_color || cfg.primary_colour) {
     const c = cfg.primary_color || cfg.primary_colour;
     $("#primary-hex").value   = c;
@@ -290,6 +329,10 @@ function applyConfig(cfg) {
   if (cfg.stylePreset !== undefined) {
     state.stylePreset = cfg.stylePreset;
     $$(".style-btn").forEach(b => b.classList.toggle("selected", b.dataset.style === state.stylePreset));
+  }
+  if (cfg.photoLayout !== undefined || cfg.photo_layout !== undefined) {
+    state.photoLayout = (cfg.photoLayout || cfg.photo_layout) === "split" ? "split" : "overlay";
+    $$(".photo-layout-btn").forEach(b => b.classList.toggle("selected", b.dataset.photoLayout === state.photoLayout));
   }
   if (cfg.variantsPerFormat) {
     state.variantsPerFormat = cfg.variantsPerFormat;
@@ -340,6 +383,87 @@ function syncColor(colorInput, textInput) {
       updateColorPreview();
     }
   });
+}
+
+// ---------------------------------------------------------------------------
+// Sector picker
+// ---------------------------------------------------------------------------
+function _sectorOption(key) {
+  return SECTOR_OPTIONS.find(o => o.key === key);
+}
+
+function _setSectorMenuOpen(open) {
+  const picker = $("#sector-picker");
+  const trigger = $("#sector-trigger");
+  const menu = $("#sector-menu");
+  if (!picker || !trigger || !menu) return;
+  picker.classList.toggle("open", open);
+  trigger.setAttribute("aria-expanded", open ? "true" : "false");
+}
+
+function setSectorValue(value, customValue = "") {
+  const hidden = $("#sector");
+  const label = $("#sector-trigger-label");
+  const customWrap = $("#sector-custom-wrap");
+  const customInput = $("#sector-custom");
+  if (!hidden || !label) return;
+
+  const raw = (value || "beaute").trim();
+  const known = _sectorOption(raw);
+  const selectedKey = known ? known.key : "autre";
+  const custom = selectedKey === "autre"
+    ? (customValue || (!known && raw !== "autre" ? raw : "")).trim()
+    : "";
+
+  hidden.value = selectedKey === "autre" ? (custom || "autre") : selectedKey;
+  label.textContent = selectedKey === "autre" ? (custom || "Autre") : known.label;
+
+  if (customInput && customInput.value !== custom) customInput.value = custom;
+  if (customWrap) customWrap.style.display = selectedKey === "autre" ? "block" : "none";
+
+  $$(".sector-option").forEach(btn => {
+    const selected = btn.dataset.sector === selectedKey;
+    btn.classList.toggle("selected", selected);
+    btn.setAttribute("aria-selected", selected ? "true" : "false");
+  });
+}
+
+function initSectorPicker() {
+  const picker = $("#sector-picker");
+  const trigger = $("#sector-trigger");
+  const customInput = $("#sector-custom");
+  if (!picker || !trigger || picker.dataset.ready === "1") return;
+  picker.dataset.ready = "1";
+
+  trigger.addEventListener("click", () => {
+    _setSectorMenuOpen(!picker.classList.contains("open"));
+  });
+
+  $$(".sector-option").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const key = btn.dataset.sector;
+      const custom = key === "autre" ? ($("#sector-custom")?.value.trim() || "") : "";
+      setSectorValue(key, custom);
+      _setSectorMenuOpen(false);
+      saveBrandConfig();
+      if (key === "autre") setTimeout(() => $("#sector-custom")?.focus(), 0);
+    });
+  });
+
+  customInput?.addEventListener("input", () => {
+    setSectorValue("autre", customInput.value);
+    saveBrandConfig();
+  });
+
+  document.addEventListener("click", e => {
+    if (!picker.contains(e.target)) _setSectorMenuOpen(false);
+  });
+
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape") _setSectorMenuOpen(false);
+  });
+
+  setSectorValue($("#sector")?.value || "beaute", customInput?.value || "");
 }
 
 // ---------------------------------------------------------------------------
@@ -559,7 +683,7 @@ function getBrandConfig() {
     cta:             $("#cta").value.trim()          || "Shop Now",
     primary_color:   $("#primary-hex").value,
     secondary_color: $("#secondary-hex").value,
-    sector:          $("#sector").value,
+    sector:          $("#sector").value || "autre",
   };
 }
 
@@ -657,6 +781,7 @@ async function generateAds() {
     image_source: state.imageSource,
     ai_model: _normalizeAIModel(state.aiModel),
     style_preset: state.stylePreset,
+    photo_layout: state.photoLayout,
     font_family: state.fontFamily || "",
     logo_b64: uploads.logo.b64 || "",
     product_b64: uploads.product.b64 || "",
@@ -817,6 +942,7 @@ async function regenAd(index) {
     image_source: state.imageSource,
     ai_model: _normalizeAIModel(state.aiModel),
     style_preset: state.stylePreset,
+    photo_layout: state.photoLayout,
     font_family: state.fontFamily || "",
     logo_b64: uploads.logo.b64 || "",
     product_b64: uploads.product.b64 || "",
@@ -1427,31 +1553,39 @@ function updateColorPreview() {
 
   const ctaText = relativeLuminance(s) > 0.25 ? "#111111" : "#ffffff";
   const fontCss = getFontCss();
+  const isLight = _currentTheme() === "light";
+  const previewBase = isLight ? "#ffffff" : "#07060d";
+  const previewText = isLight && relativeLuminance(p) > 0.42 ? "#101015" : "#ffffff";
+  const overlayOpacity = isLight ? ".28" : ".44";
+  const bottomShade = isLight ? "linear-gradient(0deg, rgba(255,255,255,.64), transparent)" : "linear-gradient(0deg, rgba(0,0,0,.46), transparent)";
 
-  preview.style.background = "#ffffff";
-  preview.style.borderColor = "var(--border)";
+  preview.style.background = `linear-gradient(135deg, ${primary} 0%, ${previewBase} 58%, ${secondary} 145%)`;
+  preview.style.borderColor = isLight ? "rgba(24,24,35,0.12)" : "rgba(255,255,255,0.12)";
 
   preview.innerHTML = `
     <div style="
-      width:100%;min-height:110px;height:100%;
+      width:100%;min-height:124px;height:100%;
       padding:12px 14px;
       position:relative;overflow:hidden;
       display:flex;flex-direction:column;justify-content:space-between;
       font-family:${fontCss};
     ">
-      <div style="position:absolute;top:-20px;right:-20px;width:64px;height:64px;
-           border-radius:50%;background:${secondary};opacity:.18;"></div>
+      <div style="position:absolute;inset:0;
+           background:linear-gradient(115deg, transparent 0 58%, ${secondary} 58% 60%, transparent 60% 100%);
+           opacity:${overlayOpacity};"></div>
+      <div style="position:absolute;left:0;right:0;bottom:0;height:42%;
+           background:${bottomShade};"></div>
       <div>
-        <div style="font-size:.62rem;font-weight:800;letter-spacing:.08em;
+        <div style="font-size:.62rem;font-weight:800;letter-spacing:0;
              color:${secondary};text-transform:uppercase;margin-bottom:3px;">${brand}</div>
         <div style="width:18px;height:2px;background:${secondary};margin-bottom:6px;"></div>
-        <div style="font-size:.68rem;font-weight:600;color:#111827;
+        <div style="font-size:.74rem;font-weight:700;color:${previewText};
              line-height:1.3;">${tagline}</div>
       </div>
       <div>
         <span style="display:inline-block;background:${secondary};color:${ctaText};
-          font-size:.58rem;font-weight:700;padding:4px 10px;border-radius:20px;
-          letter-spacing:.04em;text-transform:uppercase;">${cta}</span>
+          font-size:.58rem;font-weight:800;padding:5px 11px;border-radius:999px;
+          letter-spacing:0;text-transform:uppercase;">${cta}</span>
       </div>
     </div>`;
 }
@@ -1482,6 +1616,17 @@ function initStyleButtons() {
       $$(".style-btn").forEach(b => b.classList.remove("selected"));
       btn.classList.add("selected");
       state.stylePreset = btn.dataset.style;
+      saveBrandConfig();
+    });
+  });
+}
+
+function initPhotoLayoutButtons() {
+  $$(".photo-layout-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      $$(".photo-layout-btn").forEach(b => b.classList.remove("selected"));
+      btn.classList.add("selected");
+      state.photoLayout = btn.dataset.photoLayout === "split" ? "split" : "overlay";
       saveBrandConfig();
     });
   });
@@ -1520,6 +1665,7 @@ function saveBrandKit() {
     imageSource: state.imageSource,
     aiModel: _normalizeAIModel(state.aiModel),
     stylePreset: state.stylePreset,
+    photoLayout: state.photoLayout,
     variantsPerFormat: state.variantsPerFormat,
   };
   localStorage.setItem(KIT_KEY, JSON.stringify(kits));
@@ -1787,6 +1933,7 @@ async function handleFile(type, file) {
 // Core app init (called after auth)
 // ---------------------------------------------------------------------------
 function initApp() {
+  initSectorPicker();
   loadBrandConfig();
   initFormatButtons();
   checkHealth();
@@ -1795,7 +1942,6 @@ function initApp() {
   ["brand-name", "tagline", "description", "cta"].forEach(id => {
     $(`#${id}`).addEventListener("input", () => { saveBrandConfig(); updateColorPreview(); });
   });
-  $("#sector").addEventListener("change", saveBrandConfig);
 
   $$("nav button").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -1807,6 +1953,7 @@ function initApp() {
   initAdvancedToggle();
   initTemplates();
   initStyleButtons();
+  initPhotoLayoutButtons();
   initVariantsSlider();
   initFontPicker();
   initUploadZone("logo");
@@ -1845,6 +1992,7 @@ function initApp() {
 // Bootstrap
 // ---------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
+  initThemeToggle();
   initFormatButtons();
   syncColor($("#primary-color"), $("#primary-hex"));
   syncColor($("#secondary-color"), $("#secondary-hex"));
