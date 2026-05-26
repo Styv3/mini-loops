@@ -14,6 +14,11 @@ async function initAuth(onAuth, onGuest, onRecovery) {
   if (!_sb) { onGuest(); return; }
 
   let _isRecovery = false;
+  let _initialHandled = false;
+
+  function _dispatch(user) {
+    user ? onAuth(user) : onGuest();
+  }
 
   _sb.auth.onAuthStateChange((_ev, session) => {
     _currentUser = session?.user ?? null;
@@ -22,18 +27,30 @@ async function initAuth(onAuth, onGuest, onRecovery) {
       if (onRecovery) onRecovery(_currentUser);
       return;
     }
-    if (_isRecovery) {
-      _isRecovery = false;
-      _currentUser ? onAuth(_currentUser) : onGuest();
+    // INITIAL_SESSION is the authoritative first event — use it as the sole
+    // initial trigger and skip the getSession() fallback below.
+    if (_ev === "INITIAL_SESSION") {
+      _initialHandled = true;
+      if (!_isRecovery) _dispatch(_currentUser);
       return;
     }
-    _currentUser ? onAuth(_currentUser) : onGuest();
+    if (_isRecovery) {
+      _isRecovery = false;
+      _dispatch(_currentUser);
+      return;
+    }
+    _dispatch(_currentUser);
   });
 
-  const { data: { session } } = await _sb.auth.getSession();
-  _currentUser = session?.user ?? null;
-  if (!_isRecovery) {
-    _currentUser ? onAuth(_currentUser) : onGuest();
+  // Fallback: if INITIAL_SESSION never fired (older SDK versions), use getSession().
+  try {
+    const { data: { session } } = await _sb.auth.getSession();
+    _currentUser = session?.user ?? null;
+    if (!_isRecovery && !_initialHandled) {
+      _dispatch(_currentUser);
+    }
+  } catch {
+    if (!_initialHandled) onGuest();
   }
 }
 

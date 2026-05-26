@@ -31,15 +31,17 @@ function showPage(name) {
 // ---------------------------------------------------------------------------
 async function checkHealth() {
   const dot = $("#health-dot");
+  dot.className = "health-dot";
+  dot.title = "Connexion au serveur…";
   try {
-    const r = await fetch(`${API}/`, { signal: AbortSignal.timeout(3000) });
+    const r = await fetch(`${API}/`, { signal: AbortSignal.timeout(10000) });
     if (r.ok) {
       dot.className = "health-dot online";
-      dot.title = "Backend actif";
+      dot.title = "Serveur actif";
     } else throw new Error();
   } catch {
     dot.className = "health-dot offline";
-    dot.title = "Backend hors ligne";
+    dot.title = "Serveur indisponible";
   }
 }
 
@@ -260,9 +262,9 @@ function showProgress(container, total) {
   if (!wrap) {
     wrap = document.createElement("div");
     wrap.className = "progress-wrap";
-    wrap.innerHTML = `<div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div><div class="progress-label">Préparation…</div>`;
     container.appendChild(wrap);
   }
+  wrap.innerHTML = `<div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div><div class="progress-label">Préparation…</div>`;
   wrap.style.display = "block";
   return {
     update(done, label) {
@@ -349,7 +351,7 @@ async function generateAds() {
   const totalAds = state.selectedFormats.length * state.variantsPerFormat;
   const MODEL_TIMES = { "flux": 15, "flux-pro": 25, "flux-realism": 18, "turbo": 8 };
   const secPerAd = MODEL_TIMES[state.aiModel] || 15;
-  const timeoutMs = isAI ? totalAds * secPerAd * 1500 + 15000 : 45000;
+  const timeoutMs = isAI ? totalAds * secPerAd * 2000 + 30000 : 60000;
 
   const progress = showProgress(btn.closest(".card"), totalAds);
 
@@ -404,9 +406,11 @@ async function generateAds() {
     if (SUPABASE_OK) dbSaveAds(state.ads, config).catch(console.error);
   } catch (err) {
     const msg = err.name === "AbortError"
-      ? "Timeout dépassé — essaie avec moins de formats ou Turbo."
-      : `Erreur : ${err.message}. Le backend est-il démarré ?`;
-    setStatus(status, msg, "error");
+      ? "Le serveur met trop de temps à répondre. Patiente quelques secondes puis réessaie."
+      : "Le serveur est en train de démarrer. Attends 20-30 secondes puis réessaie.";
+    status.style.display = "block";
+    status.className = "status error";
+    status.innerHTML = `${msg} <button class="btn btn-secondary btn-sm" style="margin-left:8px;" onclick="generateAds()">↺ Réessayer</button>`;
     progress.hide();
     checkHealth();
   } finally {
@@ -1521,6 +1525,8 @@ document.addEventListener("DOMContentLoaded", () => {
   initSourceButtons();
 
   if (SUPABASE_OK) {
+    // Show auth overlay immediately to avoid blank page while session restores.
+    showAuthOverlay();
     setupAuthForm();
     initAuth(
       async (user) => {
