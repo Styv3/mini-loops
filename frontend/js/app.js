@@ -141,7 +141,12 @@ function _loadAIState() {
 // ---------------------------------------------------------------------------
 function _saveSessionAds() {
   try {
-    sessionStorage.setItem(SS_ADS_KEY, JSON.stringify({ ads: state.ads, config: getBrandConfig() }));
+    sessionStorage.setItem(SS_ADS_KEY, JSON.stringify({
+      ads: state.ads,
+      config: getBrandConfig(),
+      source: state.imageSource,
+      ts: Date.now(),
+    }));
   } catch (e) {
     if (e.name === "QuotaExceededError") console.warn("[session] ads too large to persist");
   }
@@ -151,7 +156,7 @@ function _loadSessionAds() {
   try {
     const raw = sessionStorage.getItem(SS_ADS_KEY);
     if (!raw) return;
-    const { ads } = JSON.parse(raw);
+    const { ads, config, source, ts } = JSON.parse(raw);
     if (!ads?.length) return;
     state.ads = ads;
     const grid = $("#ads-grid");
@@ -161,6 +166,9 @@ function _loadSessionAds() {
     $("#btn-download-all").style.display = hasMany ? "inline-flex" : "none";
     $("#btn-download-zip").style.display = hasMany ? "inline-flex" : "none";
     $("#btn-mock-toggle").style.display = "inline-flex";
+    // Restore history entry with original timestamp and source
+    state.history.unshift({ ads, config: config || {}, source: source || state.imageSource, ts: ts || Date.now() });
+    renderHistory();
   } catch {}
 }
 
