@@ -101,6 +101,7 @@ def generate(req: GenerateRequest):
                 product_b64=req.product_b64 or "",
                 style_preset=req.style_preset or "",
                 font_family=req.font_family or "",
+                background_b64=(req.bg_images or {}).get(fmt, ""),
             )
             results.append({
                 "format": fmt,

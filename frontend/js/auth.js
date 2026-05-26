@@ -2,6 +2,7 @@
 
 const _sb = (() => {
   if (!window.SUPABASE_URL || window.SUPABASE_URL.includes("VOTRE-PROJET")) return null;
+  if (!window.supabase) return null;
   return window.supabase.createClient(window.SUPABASE_URL, window.SUPABASE_ANON_KEY);
 })();
 

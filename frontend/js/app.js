@@ -1,5 +1,5 @@
 const API = window.API_URL || "http://localhost:8765";
-const SUPABASE_OK = !!(window.SUPABASE_URL && !window.SUPABASE_URL.includes("VOTRE-PROJET"));
+const SUPABASE_OK = !!(window.supabase && window.SUPABASE_URL && !window.SUPABASE_URL.includes("VOTRE-PROJET"));
 
 const state = {
   formats: ["feed", "story", "banner"],
@@ -461,6 +461,91 @@ function showProgress(container, total) {
   };
 }
 
+async function _withGenerateTimeout(timeoutMs, fn) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fn(controller.signal);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function _consumeSSEChunk(chunk, onAd) {
+  const line = chunk.trim();
+  if (!line.startsWith("data: ")) return false;
+  const raw = line.slice(6).trim();
+  if (raw === "[DONE]") return true;
+  try {
+    const ad = JSON.parse(raw);
+    if (ad.error) {
+      console.warn("[stream]", ad.error);
+    } else if (ad.image_b64) {
+      onAd(ad);
+    }
+  } catch (e) {
+    console.warn("[stream] invalid payload", e);
+  }
+  return false;
+}
+
+function _consumeSSEText(text, onAd) {
+  const chunks = text.split("\n\n");
+  for (const chunk of chunks) {
+    if (_consumeSSEChunk(chunk, onAd)) break;
+  }
+}
+
+async function _postGenerateStream(payload, timeoutMs, onAd) {
+  await _withGenerateTimeout(timeoutMs, async (signal) => {
+    const res = await fetch(`${API}/generate/stream`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal,
+    });
+    if (!res.ok) throw new Error(await res.text());
+
+    // Some browsers/proxies expose fetch but not a readable response stream.
+    // In that case, wait for the SSE text and parse it at the end.
+    if (!res.body || typeof res.body.getReader !== "function") {
+      _consumeSSEText(await res.text(), onAd);
+      return;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const chunks = buffer.split("\n\n");
+      buffer = chunks.pop();
+      for (const chunk of chunks) {
+        if (_consumeSSEChunk(chunk, onAd)) return;
+      }
+    }
+
+    if (buffer.trim()) _consumeSSEChunk(buffer, onAd);
+  });
+}
+
+async function _postGenerateBatch(payload, timeoutMs) {
+  return await _withGenerateTimeout(timeoutMs, async (signal) => {
+    const res = await fetch(`${API}/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal,
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    return data.ads || [];
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Form values
 // ---------------------------------------------------------------------------
@@ -578,48 +663,39 @@ async function generateAds() {
 
   const MODEL_TIMES = { "flux": 8, "flux-pro": 18, "flux-realism": 12, "turbo": 5 };
   const secPerAd = MODEL_TIMES[state.aiModel] || 8;
-  // Backend ne fait que composer (pas d'attente Pollinations) quand bgImages fournis
-  const timeoutMs = isAI && Object.keys(bgImages).length > 0
-    ? totalAds * 5000 + 15000
-    : isAI ? totalAds * secPerAd * 2000 + 30000 : 60000;
+  const missingAIBackgrounds = isAI
+    ? state.selectedFormats.filter(fmt => !bgImages[fmt]).length * state.variantsPerFormat
+    : 0;
+  // Prefetched backgrounds are fast to compose. Missing AI backgrounds may spend
+  // up to 3 x 20s in the Railway fallback before flat colors are returned.
+  const timeoutMs = isAI
+    ? totalAds * 5000 + missingAIBackgrounds * 65000 + 70000
+    : 90000;
+  const batchTimeoutMs = Math.max(timeoutMs, isAI ? totalAds * secPerAd * 3000 + 45000 : 60000);
 
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    const appendGeneratedAd = (ad) => {
+      ad.source = ad.used_source ?? state.imageSource;
+      state.ads.push(ad);
+      appendAd(ad, state.ads.length - 1);
+      const done = ad.done || state.ads.length;
+      const total = ad.total || totalAds;
+      progress.update(done, `${done} / ${total} visuel${done > 1 ? "s" : ""} généré${done > 1 ? "s" : ""}`);
+    };
 
-    const res = await fetch(`${API}/generate/stream`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-    if (!res.ok) throw new Error(await res.text());
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const chunks = buffer.split("\n\n");
-      buffer = chunks.pop();
-      for (const chunk of chunks) {
-        if (!chunk.startsWith("data: ")) continue;
-        const raw = chunk.slice(6).trim();
-        if (raw === "[DONE]") break;
-        try {
-          const ad = JSON.parse(raw);
-          if (ad.error) { console.warn("[stream]", ad.error); continue; }
-          ad.source = ad.used_source ?? state.imageSource;
-          state.ads.push(ad);
-          appendAd(ad, state.ads.length - 1);
-          progress.update(ad.done, `${ad.done} / ${ad.total} visuel${ad.done > 1 ? "s" : ""} généré${ad.done > 1 ? "s" : ""}`);
-        } catch {}
-      }
+    let streamError = null;
+    try {
+      await _postGenerateStream(payload, timeoutMs, appendGeneratedAd);
+    } catch (err) {
+      streamError = err;
+      console.warn("[generate] stream failed", err);
     }
-    clearTimeout(timer);
+
+    if (!state.ads.length) {
+      progress.update(0, streamError ? "Connexion lente — nouvelle tentative…" : "Génération classique…");
+      const ads = await _postGenerateBatch(payload, batchTimeoutMs);
+      ads.forEach((ad, i) => appendGeneratedAd({ ...ad, done: i + 1, total: ads.length }));
+    }
 
     if (!state.ads.length) throw new Error("Aucun visuel généré.");
     pushHistory(state.ads, config);
@@ -719,6 +795,12 @@ async function regenAd(index) {
   regenBtn.disabled = true;
 
   const config = getBrandConfig();
+  const bgImages = {};
+  if (state.imageSource === "ai") {
+    const b64 = await prefetchAIBackground(config, ad.format, state.aiModel);
+    if (b64) bgImages[ad.format] = b64;
+  }
+
   const payload = {
     ...config,
     formats: [ad.format],
@@ -729,43 +811,32 @@ async function regenAd(index) {
     font_family: state.fontFamily || "",
     logo_b64: uploads.logo.b64 || "",
     product_b64: uploads.product.b64 || "",
+    bg_images: bgImages,
   };
 
   try {
-    const res = await fetch(`${API}/generate/stream`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: _abortTimeout(60000),
-    });
-    if (!res.ok) throw new Error(await res.text());
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const chunks = buffer.split("\n\n");
-      buffer = chunks.pop();
-      for (const chunk of chunks) {
-        if (!chunk.startsWith("data: ")) continue;
-        const raw = chunk.slice(6).trim();
-        if (raw === "[DONE]") break;
-        try {
-          const newAd = JSON.parse(raw);
-          if (newAd.error || !newAd.image_b64) continue;
-          newAd.source = newAd.used_source ?? state.imageSource;
-          newAd.variant = ad.variant;
-          state.ads[index] = newAd;
-          const newCard = _buildAdCard(newAd, index);
-          card.replaceWith(newCard);
-          if (state.mockMode) applyMockClasses();
-          return;
-        } catch {}
-      }
+    const timeoutMs = state.imageSource === "ai" && !bgImages[ad.format] ? 140000 : 90000;
+    let replacement = null;
+    try {
+      await _postGenerateStream(payload, timeoutMs, (newAd) => {
+        if (!replacement) replacement = newAd;
+      });
+    } catch (err) {
+      console.warn("[regen] stream failed", err);
     }
+
+    if (!replacement) {
+      const ads = await _postGenerateBatch(payload, timeoutMs);
+      replacement = ads[0] || null;
+    }
+
+    if (!replacement) throw new Error("Aucun visuel généré.");
+    replacement.source = replacement.used_source ?? state.imageSource;
+    replacement.variant = ad.variant;
+    state.ads[index] = replacement;
+    const newCard = _buildAdCard(replacement, index);
+    card.replaceWith(newCard);
+    if (state.mockMode) applyMockClasses();
   } catch (err) {
     notify(`Regen échoué : ${err.message}`, "error");
     regenBtn.classList.remove("spinning");
