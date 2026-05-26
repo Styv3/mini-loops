@@ -128,7 +128,11 @@ function _updateAILimitUI() {
 // ---------------------------------------------------------------------------
 function _saveAIState() {
   try {
-    localStorage.setItem(LS_AI_KEY, JSON.stringify({ used: _ai.used, cooldownUntil: _ai.cooldownUntil }));
+    localStorage.setItem(LS_AI_KEY, JSON.stringify({
+      used: _ai.used,
+      cooldownUntil: _ai.cooldownUntil,
+      userId: getUser()?.id || null,
+    }));
   } catch {}
 }
 
@@ -136,7 +140,11 @@ function _loadAIState() {
   try {
     const raw = localStorage.getItem(LS_AI_KEY);
     if (!raw) return;
-    const { used, cooldownUntil } = JSON.parse(raw);
+    const { used, cooldownUntil, userId } = JSON.parse(raw);
+    if (userId !== (getUser()?.id || null)) {
+      localStorage.removeItem(LS_AI_KEY);
+      return;
+    }
     _ai.used = used || 0;
     _ai.cooldownUntil = cooldownUntil || 0;
     if (_ai.cooldownUntil > Date.now()) _startAITick();
@@ -153,6 +161,7 @@ function _saveSessionAds() {
       config: getBrandConfig(),
       source: state.imageSource,
       ts: Date.now(),
+      userId: getUser()?.id || null,
     }));
   } catch (e) {
     if (e.name === "QuotaExceededError") console.warn("[session] ads too large to persist");
@@ -163,7 +172,11 @@ function _loadSessionAds() {
   try {
     const raw = sessionStorage.getItem(SS_ADS_KEY);
     if (!raw) return;
-    const { ads, config, source, ts } = JSON.parse(raw);
+    const { ads, config, source, ts, userId } = JSON.parse(raw);
+    if (userId !== (getUser()?.id || null)) {
+      sessionStorage.removeItem(SS_ADS_KEY);
+      return;
+    }
     if (!ads?.length) return;
     state.ads = ads;
     const grid = $("#ads-grid");
@@ -173,10 +186,18 @@ function _loadSessionAds() {
     $("#btn-download-all").style.display = hasMany ? "inline-flex" : "none";
     $("#btn-download-zip").style.display = hasMany ? "inline-flex" : "none";
     $("#btn-mock-toggle").style.display = "inline-flex";
-    // Restore history entry with original timestamp and source
     state.history.unshift({ ads, config: config || {}, source: source || state.imageSource, ts: ts || Date.now() });
     renderHistory();
   } catch {}
+}
+
+function _clearUserSession() {
+  sessionStorage.removeItem(SS_ADS_KEY);
+  localStorage.removeItem(LS_AI_KEY);
+  _ai.used = 0;
+  _ai.cooldownUntil = 0;
+  clearInterval(_ai._tick);
+  _ai._tick = null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1075,6 +1096,7 @@ function showApp(user) {
     <span class="user-email">${user.email}</span>
     <button class="btn btn-secondary btn-sm" id="btn-logout">Déconnexion</button>`;
   $("#btn-logout").addEventListener("click", async () => {
+    _clearUserSession();
     await authSignOut();
   });
 
@@ -1738,6 +1760,7 @@ function initApp() {
     }
   });
 
+  _loadAIState();
   _loadSessionAds();
   _updateAILimitUI();
   showPage("generate");
@@ -1747,7 +1770,6 @@ function initApp() {
 // Bootstrap
 // ---------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
-  _loadAIState();
   initFormatButtons();
   syncColor($("#primary-color"), $("#primary-hex"));
   syncColor($("#secondary-color"), $("#secondary-hex"));
