@@ -16,7 +16,7 @@ const state = {
 };
 
 const AI_SESSION_LIMIT = 2;
-const AI_COOLDOWN_MS = 60 * 1000;
+const AI_COOLDOWN_MS = 2 * 60 * 1000;
 const _ai = { used: 0, cooldownUntil: 0, _tick: null };
 
 const $ = (sel) => document.querySelector(sel);
@@ -611,6 +611,7 @@ async function generateAds() {
       } else {
         _ai.used++;
         _saveAIState();
+        if (_aiRemaining() === 0) _triggerAICooldown();
         progress.update(totalAds, fallbacks > 0 ? `Terminé (${fallbacks} en couleurs)` : "Terminé !");
         if (fallbacks > 0) notify(`${fallbacks} visuel${fallbacks > 1 ? "s" : ""} en mode couleurs — quota IA partiel`, "error");
         setTimeout(() => progress.hide(), 2000);
