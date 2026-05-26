@@ -15,6 +15,10 @@ const state = {
   history: [],
 };
 
+const AI_SESSION_LIMIT = 3;
+const AI_COOLDOWN_MS = 5 * 60 * 1000;
+const _ai = { used: 0, cooldownUntil: 0, _tick: null };
+
 const $ = (sel) => document.querySelector(sel);
 const $$ = (sel) => document.querySelectorAll(sel);
 
@@ -61,6 +65,53 @@ async function prefetchAIBackground(config, format, aiModel) {
         console.warn(`[AI prefetch] ${format}:`, e.message);
         return null;
     }
+}
+
+// ---------------------------------------------------------------------------
+// AI session limit helpers
+// ---------------------------------------------------------------------------
+function _aiRemaining() {
+  return Math.max(0, AI_SESSION_LIMIT - _ai.used);
+}
+
+function _triggerAICooldown() {
+  _ai.cooldownUntil = Date.now() + AI_COOLDOWN_MS;
+  _ai.used = 0;
+  _startAITick();
+  _updateAILimitUI();
+}
+
+function _startAITick() {
+  clearInterval(_ai._tick);
+  _ai._tick = setInterval(() => {
+    if (Date.now() >= _ai.cooldownUntil) {
+      clearInterval(_ai._tick);
+      _ai._tick = null;
+    }
+    _updateAILimitUI();
+  }, 1000);
+}
+
+function _updateAILimitUI() {
+  const el = $("#ai-limit-info");
+  if (!el) return;
+  if (state.imageSource !== "ai") { el.style.display = "none"; return; }
+  el.style.display = "block";
+  const now = Date.now();
+  const inCooldown = _ai.cooldownUntil > now;
+  const btn = $("#btn-generate");
+  if (inCooldown) {
+    const secs = Math.ceil((_ai.cooldownUntil - now) / 1000);
+    const m = Math.floor(secs / 60), s = secs % 60;
+    el.className = "ai-limit-info cooldown";
+    el.innerHTML = `<span class="ai-limit-icon">⏳</span> Limite atteinte — disponible dans <strong>${m}:${s.toString().padStart(2, "0")}</strong>`;
+    if (btn) btn.disabled = true;
+  } else {
+    const remaining = _aiRemaining();
+    el.className = "ai-limit-info" + (remaining <= 1 ? " low" : "");
+    el.innerHTML = `<span class="ai-limit-icon">✦</span> <strong>${remaining}</strong> génération${remaining !== 1 ? "s" : ""} IA disponible${remaining !== 1 ? "s" : ""} cette session`;
+    if (btn) btn.disabled = false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -137,6 +188,7 @@ function applyConfig(cfg) {
     state.imageSource = cfg.image_source || cfg.imageSource;
     $$(".source-btn").forEach(b => b.classList.toggle("selected", b.dataset.source === state.imageSource));
     updateModelFieldVisibility();
+    _updateAILimitUI();
   }
   if (cfg.aiModel) {
     state.aiModel = cfg.aiModel;
@@ -233,12 +285,21 @@ function updateModelFieldVisibility() {
 }
 
 function initSourceButtons() {
+  const sourceGrid = $("#source-grid");
+  if (sourceGrid && !$("#ai-limit-info")) {
+    const el = document.createElement("div");
+    el.id = "ai-limit-info";
+    el.className = "ai-limit-info";
+    el.style.display = "none";
+    sourceGrid.after(el);
+  }
   $$(".source-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
       $$(".source-btn").forEach((b) => b.classList.remove("selected"));
       btn.classList.add("selected");
       state.imageSource = btn.dataset.source;
       updateModelFieldVisibility();
+      _updateAILimitUI();
       saveBrandConfig();
     });
   });
@@ -374,6 +435,23 @@ async function generateAds() {
   saveBrandConfig();
 
   const isAI = state.imageSource === "ai";
+
+  // Session limit guard — surface as a feature, not an error
+  if (isAI) {
+    if (_ai.cooldownUntil > Date.now()) {
+      _updateAILimitUI();
+      btn.disabled = false;
+      btn.textContent = "Générer les publicités";
+      return;
+    }
+    if (_aiRemaining() === 0) {
+      _triggerAICooldown();
+      btn.disabled = false;
+      btn.textContent = "Générer les publicités";
+      return;
+    }
+  }
+
   const totalAds = state.selectedFormats.length * state.variantsPerFormat;
   const progress = showProgress(btn.closest(".card"), totalAds);
 
@@ -463,17 +541,16 @@ async function generateAds() {
     $("#btn-download-zip").style.display = hasMany ? "inline-flex" : "none";
     $("#btn-mock-toggle").style.display = "inline-flex";
 
-    // Warn explicitly if AI was requested but some/all ads fell back to color
     if (isAI) {
       const fallbacks = state.ads.filter(ad => ad.source === "none").length;
       if (fallbacks === state.ads.length) {
-        progress.update(totalAds, "⚠ Génération IA indisponible");
-        setStatus(status,
-          "Le service IA (Pollinations) est actuellement indisponible. Les visuels ont été générés en mode couleurs. Réessaie dans quelques minutes.",
-          "error");
+        // All AI failed — treat as session limit exhausted
+        progress.update(totalAds, "Limite de session IA atteinte");
+        _triggerAICooldown();
       } else {
+        _ai.used++;
         progress.update(totalAds, fallbacks > 0 ? `Terminé (${fallbacks} en couleurs)` : "Terminé !");
-        if (fallbacks > 0) notify(`${fallbacks} visuel${fallbacks > 1 ? "s" : ""} en mode couleurs — IA partiellement indisponible`, "error");
+        if (fallbacks > 0) notify(`${fallbacks} visuel${fallbacks > 1 ? "s" : ""} en mode couleurs — quota IA partiel`, "error");
         setTimeout(() => progress.hide(), 2000);
       }
     } else {
@@ -494,6 +571,7 @@ async function generateAds() {
   } finally {
     btn.disabled = false;
     btn.textContent = "Générer les publicités";
+    _updateAILimitUI(); // re-applies disabled state if cooldown was just triggered
   }
 }
 

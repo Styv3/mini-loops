@@ -525,6 +525,32 @@ select { cursor: pointer; appearance: none; background-image: url("data:image/sv
 .source-label { font-size: 0.78rem; font-weight: 600; color: var(--text); }
 .source-desc  { font-size: 0.65rem; color: var(--text-muted); }
 
+/* ---- AI session limit banner ---- */
+.ai-limit-info {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--accent);
+  background: var(--accent-light);
+  border: 1px solid rgba(99,102,241,0.25);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.ai-limit-info.low {
+  color: #f59e0b;
+  background: rgba(245,158,11,0.08);
+  border-color: rgba(245,158,11,0.3);
+}
+.ai-limit-info.cooldown {
+  color: var(--text-muted);
+  background: var(--surface2);
+  border-color: var(--border);
+}
+.ai-limit-icon { font-size: 0.9rem; }
+
 /* ---- Lightbox ---- */
 #lightbox {
   display: none;
