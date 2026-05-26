@@ -16,7 +16,7 @@ const state = {
 };
 
 const AI_SESSION_LIMIT = 2;
-const AI_COOLDOWN_MS = 5 * 60 * 1000;
+const AI_COOLDOWN_MS = 60 * 1000;
 const _ai = { used: 0, cooldownUntil: 0, _tick: null };
 
 const $ = (sel) => document.querySelector(sel);
