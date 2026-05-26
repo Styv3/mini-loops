@@ -77,6 +77,7 @@ function _aiRemaining() {
 function _triggerAICooldown() {
   _ai.cooldownUntil = Date.now() + AI_COOLDOWN_MS;
   _ai.used = 0;
+  _saveAIState();
   _startAITick();
   _updateAILimitUI();
 }
@@ -87,6 +88,7 @@ function _startAITick() {
     if (Date.now() >= _ai.cooldownUntil) {
       clearInterval(_ai._tick);
       _ai._tick = null;
+      _saveAIState();
     }
     _updateAILimitUI();
   }, 1000);
@@ -115,6 +117,54 @@ function _updateAILimitUI() {
 }
 
 // ---------------------------------------------------------------------------
+// AI state persistence (localStorage — survives refresh + tab close)
+// ---------------------------------------------------------------------------
+function _saveAIState() {
+  try {
+    localStorage.setItem(LS_AI_KEY, JSON.stringify({ used: _ai.used, cooldownUntil: _ai.cooldownUntil }));
+  } catch {}
+}
+
+function _loadAIState() {
+  try {
+    const raw = localStorage.getItem(LS_AI_KEY);
+    if (!raw) return;
+    const { used, cooldownUntil } = JSON.parse(raw);
+    _ai.used = used || 0;
+    _ai.cooldownUntil = cooldownUntil || 0;
+    if (_ai.cooldownUntil > Date.now()) _startAITick();
+  } catch {}
+}
+
+// ---------------------------------------------------------------------------
+// Ads persistence (sessionStorage — survives F5, cleared on tab close)
+// ---------------------------------------------------------------------------
+function _saveSessionAds() {
+  try {
+    sessionStorage.setItem(SS_ADS_KEY, JSON.stringify({ ads: state.ads, config: getBrandConfig() }));
+  } catch (e) {
+    if (e.name === "QuotaExceededError") console.warn("[session] ads too large to persist");
+  }
+}
+
+function _loadSessionAds() {
+  try {
+    const raw = sessionStorage.getItem(SS_ADS_KEY);
+    if (!raw) return;
+    const { ads } = JSON.parse(raw);
+    if (!ads?.length) return;
+    state.ads = ads;
+    const grid = $("#ads-grid");
+    grid.innerHTML = "";
+    ads.forEach((ad, i) => appendAd(ad, i));
+    const hasMany = ads.length > 1;
+    $("#btn-download-all").style.display = hasMany ? "inline-flex" : "none";
+    $("#btn-download-zip").style.display = hasMany ? "inline-flex" : "none";
+    $("#btn-mock-toggle").style.display = "inline-flex";
+  } catch {}
+}
+
+// ---------------------------------------------------------------------------
 // Backend health check
 // ---------------------------------------------------------------------------
 async function checkHealth() {
@@ -136,7 +186,9 @@ async function checkHealth() {
 // ---------------------------------------------------------------------------
 // LocalStorage persistence
 // ---------------------------------------------------------------------------
-const LS_KEY = "loops_brand_config";
+const LS_KEY    = "loops_brand_config";
+const LS_AI_KEY = "loops_ai_session";
+const SS_ADS_KEY = "loops_session_ads";
 
 function saveBrandConfig() {
   const cfg = {
@@ -535,6 +587,7 @@ async function generateAds() {
 
     if (!state.ads.length) throw new Error("Aucun visuel généré.");
     pushHistory(state.ads, config);
+    _saveSessionAds();
     setStatus(status, "", "");
     const hasMany = state.ads.length > 1;
     $("#btn-download-all").style.display = hasMany ? "inline-flex" : "none";
@@ -549,6 +602,7 @@ async function generateAds() {
         _triggerAICooldown();
       } else {
         _ai.used++;
+        _saveAIState();
         progress.update(totalAds, fallbacks > 0 ? `Terminé (${fallbacks} en couleurs)` : "Terminé !");
         if (fallbacks > 0) notify(`${fallbacks} visuel${fallbacks > 1 ? "s" : ""} en mode couleurs — quota IA partiel`, "error");
         setTimeout(() => progress.hide(), 2000);
@@ -1668,6 +1722,8 @@ function initApp() {
     }
   });
 
+  _loadSessionAds();
+  _updateAILimitUI();
   showPage("generate");
 }
 
@@ -1675,6 +1731,7 @@ function initApp() {
 // Bootstrap
 // ---------------------------------------------------------------------------
 document.addEventListener("DOMContentLoaded", () => {
+  _loadAIState();
   initFormatButtons();
   syncColor($("#primary-color"), $("#primary-hex"));
   syncColor($("#secondary-color"), $("#secondary-hex"));
