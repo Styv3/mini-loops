@@ -1656,18 +1656,6 @@ select {
   grid-column: 1 / -1;
 }
 
-#ads-grid .ad-card[data-source="stock"] {
-  grid-column: 1 / -1;
-  justify-self: stretch;
-  width: 100%;
-  max-width: none;
-}
-
-#ads-grid .ad-card[data-source="stock"][data-format="story"] {
-  width: 100%;
-  max-width: none;
-}
-
 .ad-card {
   background:
     linear-gradient(180deg, rgba(255,255,255,0.075), rgba(255,255,255,0.025)),

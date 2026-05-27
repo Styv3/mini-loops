@@ -1144,7 +1144,7 @@ function updateHistoryLayout() {
   const section = $("#history-section");
   if (!layout || !section) return;
   const lastAd = state.ads[state.ads.length - 1];
-  const inline = !!(lastAd && lastAd.format === "story" && lastAd.source !== "stock" && state.history.length);
+  const inline = !!(lastAd && lastAd.format === "story" && state.history.length);
   layout.classList.toggle("history-inline", inline);
   section.style.gridRow = inline ? String(Math.max(state.ads.length, 1)) : "";
 }
