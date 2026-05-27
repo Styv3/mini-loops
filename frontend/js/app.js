@@ -914,6 +914,7 @@ function _buildAdCard(ad, i) {
   const card = document.createElement("div");
   card.className = "ad-card";
   card.dataset.format = ad.format;
+  card.dataset.source = ad.source || "none";
   card.innerHTML = `
     <div class="ad-img-wrap">
       <span class="source-badge src-${ad.source}">${sourceLabel}</span>

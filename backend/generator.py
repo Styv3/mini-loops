@@ -187,6 +187,50 @@ def _wrap_text(text: str, font, max_width: int, draw: ImageDraw) -> list[str]:
     return lines
 
 
+def _text_line_step(font, draw: ImageDraw, fallback: int) -> int:
+    try:
+        bbox = draw.textbbox((0, 0), "Ag", font=font)
+        return max(1, int((bbox[3] - bbox[1]) * 1.25), fallback)
+    except Exception:
+        return max(1, fallback)
+
+
+def _ellipsize_line(text: str, font, max_width: int, draw: ImageDraw) -> str:
+    suffix = "..."
+    text = text.strip()
+    if not text:
+        return ""
+    while text:
+        candidate = f"{text}{suffix}"
+        if draw.textbbox((0, 0), candidate, font=font)[2] <= max_width:
+            return candidate
+        text = text[:-1].rstrip()
+    return suffix if draw.textbbox((0, 0), suffix, font=font)[2] <= max_width else ""
+
+
+def _fit_text_lines(text: str, font, max_width: int, draw: ImageDraw, max_height: int, line_step: int) -> list[str]:
+    if not text or max_width <= 0 or max_height <= 0 or line_step <= 0:
+        return []
+    lines = _wrap_text(text, font, max_width, draw)
+    max_lines = max(0, int(max_height // line_step))
+    if max_lines <= 0:
+        return []
+    if len(lines) <= max_lines:
+        return lines
+    fitted = lines[:max_lines]
+    fitted[-1] = _ellipsize_line(fitted[-1], font, max_width, draw)
+    return [line for line in fitted if line]
+
+
+def _draw_text_lines(draw: ImageDraw, lines: list[str], x: int, y: int, font, fill, line_step: int, anchor: str | None = None):
+    for line in lines:
+        if anchor:
+            draw.text((x, y), line, font=font, fill=fill, anchor=anchor)
+        else:
+            draw.text((x, y), line, font=font, fill=fill)
+        y += line_step
+
+
 def _draw_gradient(draw: ImageDraw, width: int, height: int, c1: tuple, c2: tuple):
     for y in range(height):
         r = y / height
@@ -209,6 +253,18 @@ def _gradient_bg(img: Image.Image, c1: tuple, c2: tuple) -> Image.Image:
         t = y / max(h - 1, 1)
         pix[0, y] = (int(c1[0]+(c2[0]-c1[0])*t), int(c1[1]+(c2[1]-c1[1])*t), int(c1[2]+(c2[2]-c1[2])*t))
     return strip.resize((w, h), Image.BILINEAR)
+
+
+def _resize_cover(img: Image.Image, width: int, height: int) -> Image.Image:
+    """Scale without distortion, filling the whole target canvas."""
+    src = img.convert("RGB")
+    scale = max(width / max(src.width, 1), height / max(src.height, 1))
+    new_w = max(width, int(src.width * scale))
+    new_h = max(height, int(src.height * scale))
+    resized = src.resize((new_w, new_h), Image.LANCZOS)
+    left = max(0, (new_w - width) // 2)
+    top = max(0, (new_h - height) // 2)
+    return resized.crop((left, top, left + width, top + height))
 
 
 def _apply_overlay(img: Image.Image, primary: tuple, opacity: int = 160) -> Image.Image:
@@ -257,7 +313,7 @@ def fetch_background(sector: str, hint: str, width: int, height: int, source: st
                 with urllib.request.urlopen(req, timeout=20) as resp:
                     data = resp.read()
                 img = Image.open(io.BytesIO(data)).convert("RGB")
-                result = img.resize((width, height), Image.LANCZOS)
+                result = _resize_cover(img, width, height)
                 print(f"[fetch_background] OK attempt {attempt+1} — {len(data)} bytes")
                 return result
             except Exception as e:
@@ -274,7 +330,7 @@ def fetch_background(sector: str, hint: str, width: int, height: int, source: st
             with urllib.request.urlopen(req, timeout=20) as resp:
                 data = resp.read()
             img = Image.open(io.BytesIO(data)).convert("RGB")
-            return img.resize((width, height), Image.LANCZOS)
+            return _resize_cover(img, width, height)
         except Exception as e:
             print(f"[fetch_background] stock failed: {e}")
             return None
@@ -317,7 +373,7 @@ def generate_ad(
         try:
             data = base64.b64decode(background_b64)
             prefetched = Image.open(io.BytesIO(data)).convert("RGB")
-            bg = prefetched.resize((width, height), Image.LANCZOS)
+            bg = _resize_cover(prefetched, width, height)
             print(f"[generate_ad] used client-prefetched background for {format_key}")
         except Exception as e:
             print(f"[generate_ad] prefetched bg decode failed: {e}")
@@ -443,17 +499,18 @@ def _photo_overlay(bg, w, h, brand, tagline, desc, cta, primary, secondary, cf=N
         draw.text((pad, y), line, font=font_tag, fill=white)
         y += int(h * 0.075)
 
-    # Description
-    font_desc = _load_font(int(h * 0.030), cf)
-    lines = _wrap_text(desc, font_desc, w - pad * 2, draw)
-    y_desc = y + int(h * 0.02)
-    for line in lines:
-        draw.text((pad, y_desc), line, font=font_desc, fill=(200, 200, 210))
-        y_desc += int(h * 0.040)
-
     # CTA button
     btn_w, btn_h = int(w * 0.52), int(h * 0.072)
     bx, by = pad, int(h * 0.87)
+
+    # Description
+    font_desc = _load_font(int(h * 0.030), cf)
+    desc_step = _text_line_step(font_desc, draw, int(h * 0.040))
+    y_desc = y + int(h * 0.02)
+    desc_bottom = by - int(h * 0.035)
+    lines = _fit_text_lines(desc, font_desc, w - pad * 2, draw, desc_bottom - y_desc, desc_step)
+    _draw_text_lines(draw, lines, pad, y_desc, font_desc, (200, 200, 210), desc_step)
+
     draw.rounded_rectangle([bx, by, bx + btn_w, by + btn_h], radius=btn_h // 2, fill=secondary)
     accent = _contrast_color(secondary)
     font_cta = _load_font(int(h * 0.034), cf)
@@ -463,19 +520,16 @@ def _photo_overlay(bg, w, h, brand, tagline, desc, cta, primary, secondary, cf=N
 
 
 def _photo_split(bg, w, h, brand, tagline, desc, cta, primary, secondary, cf=None):
-    """Photo on the right, solid color panel on the left."""
-    img = Image.new("RGB", (w, h))
-    # Left panel: solid primary
-    left = Image.new("RGB", (w // 2, h), primary)
-    img.paste(left, (0, 0))
-    # Right: photo (crop right half)
-    right_resized = bg.resize((w, h)).crop((w // 2, 0, w, h))
-    img.paste(right_resized, (w // 2, 0))
+    """Full-width photo with a tinted text panel on the left."""
+    img = _resize_cover(bg, w, h).convert("RGBA")
+    half = w // 2
+    left = Image.new("RGBA", (half, h), (*primary, 224))
+    img.alpha_composite(left, (0, 0))
+    img = img.convert("RGB")
 
     draw = ImageDraw.Draw(img)
     text_color = _contrast_color(primary)
     pad = int(w * 0.05)
-    half = w // 2
 
     # Brand
     font_brand = _load_font(int(h * 0.050), cf)
@@ -493,17 +547,18 @@ def _photo_split(bg, w, h, brand, tagline, desc, cta, primary, secondary, cf=Non
         draw.text((pad, y), line, font=font_tag, fill=text_color)
         y += int(h * 0.057)
 
-    # Description
-    font_desc = _load_font(int(h * 0.028), cf)
-    lines = _wrap_text(desc, font_desc, half - pad * 2, draw)
-    y_desc = int(h * 0.57)
-    for line in lines:
-        draw.text((pad, y_desc), line, font=font_desc, fill=(*text_color[:3],))
-        y_desc += int(h * 0.038)
-
     # CTA
     btn_w, btn_h = int(half * 0.80), int(h * 0.072)
     bx, by = pad, int(h * 0.83)
+
+    # Description
+    font_desc = _load_font(int(h * 0.028), cf)
+    desc_step = _text_line_step(font_desc, draw, int(h * 0.038))
+    y_desc = max(int(h * 0.57), y + int(h * 0.035))
+    desc_bottom = by - int(h * 0.035)
+    lines = _fit_text_lines(desc, font_desc, half - pad * 2, draw, desc_bottom - y_desc, desc_step)
+    _draw_text_lines(draw, lines, pad, y_desc, font_desc, text_color, desc_step)
+
     draw.rounded_rectangle([bx, by, bx + btn_w, by + btn_h], radius=6, fill=secondary)
     accent = _contrast_color(secondary)
     font_cta = _load_font(int(h * 0.032), cf)
@@ -552,16 +607,17 @@ def _photo_frame(bg, w, h, brand, tagline, desc, cta, primary, secondary, cf=Non
         draw.text((w // 2, y), line, font=font_tag, fill=white, anchor="mm")
         y += int(h * 0.056)
 
-    font_desc = _load_font(int(h * 0.027), cf)
-    lines = _wrap_text(desc, font_desc, inner_w, draw)
-    y_desc = pad_y + int(h * 0.50)
-    for line in lines:
-        draw.text((w // 2, y_desc), line, font=font_desc, fill=(*white[:3],), anchor="mm")
-        y_desc += int(h * 0.037)
-
     btn_w, btn_h = int(card_w * 0.65), int(h * 0.072)
     bx = (w - btn_w) // 2
     by = pad_y + card_h - btn_h - int(h * 0.06)
+
+    font_desc = _load_font(int(h * 0.027), cf)
+    desc_step = _text_line_step(font_desc, draw, int(h * 0.037))
+    y_desc = max(pad_y + int(h * 0.50), y + int(h * 0.030))
+    desc_bottom = by - int(h * 0.035)
+    lines = _fit_text_lines(desc, font_desc, inner_w, draw, desc_bottom - y_desc, desc_step)
+    _draw_text_lines(draw, lines, w // 2, y_desc, font_desc, white, desc_step, anchor="mm")
+
     draw.rounded_rectangle([bx, by, bx + btn_w, by + btn_h], radius=btn_h // 2, fill=secondary)
     accent = _contrast_color(secondary)
     font_cta = _load_font(int(h * 0.032), cf)
@@ -609,18 +665,19 @@ def _layout_centered(draw, w, h, brand, tagline, desc, cta, primary, secondary, 
         draw.text((pad, y), line, font=font_tag, fill=text_color)
         y += int(h * 0.078)
 
-    # Description
-    font_desc = _load_font(int(h * 0.028), cf)
-    desc_lines = _wrap_text(desc, font_desc, w - pad * 2, draw)
-    y_desc = int(h * 0.55)
-    for line in desc_lines:
-        draw.text((pad, y_desc), line, font=font_desc, fill=muted)
-        y_desc += int(h * 0.038)
-
     # CTA pill button
     font_cta = _load_font(int(h * 0.034), cf)
     btn_w, btn_h = int(w * 0.58), int(h * 0.076)
     bx, by = pad, int(h * 0.865)
+
+    # Description
+    font_desc = _load_font(int(h * 0.028), cf)
+    desc_step = _text_line_step(font_desc, draw, int(h * 0.038))
+    y_desc = max(int(h * 0.55), y + int(h * 0.030))
+    desc_bottom = by - int(h * 0.035)
+    desc_lines = _fit_text_lines(desc, font_desc, w - pad * 2, draw, desc_bottom - y_desc, desc_step)
+    _draw_text_lines(draw, desc_lines, pad, y_desc, font_desc, muted, desc_step)
+
     draw.rounded_rectangle([bx, by, bx + btn_w, by + btn_h], radius=btn_h // 2, fill=secondary)
     draw.text((bx + btn_w // 2, by + btn_h // 2), cta.upper(), font=font_cta, fill=accent_btn, anchor="mm")
 
@@ -653,18 +710,19 @@ def _layout_split(draw, img, w, h, brand, tagline, desc, cta, primary, secondary
     sep_y = int(h * 0.23)
     draw.rectangle([(pad, sep_y), (pad + int(w * 0.07), sep_y + 3)], fill=secondary)
 
-    # Left: description
-    font_desc = _load_font(int(h * 0.026), cf)
-    desc_lines = _wrap_text(desc, font_desc, half - pad * 2, draw)
-    y_desc = int(h * 0.30)
-    for line in desc_lines:
-        draw.text((pad, y_desc), line, font=font_desc, fill=muted_left)
-        y_desc += int(h * 0.037)
-
     # Left: CTA
     font_cta = _load_font(int(h * 0.032), cf)
     btn_w, btn_h = int(half * 0.78), int(h * 0.07)
     bx, by = pad, int(h * 0.82)
+
+    # Left: description
+    font_desc = _load_font(int(h * 0.026), cf)
+    desc_step = _text_line_step(font_desc, draw, int(h * 0.037))
+    y_desc = int(h * 0.30)
+    desc_bottom = by - int(h * 0.035)
+    desc_lines = _fit_text_lines(desc, font_desc, half - pad * 2, draw, desc_bottom - y_desc, desc_step)
+    _draw_text_lines(draw, desc_lines, pad, y_desc, font_desc, muted_left, desc_step)
+
     draw.rounded_rectangle([bx, by, bx + btn_w, by + btn_h], radius=6, fill=text_left)
     draw.text((bx + btn_w // 2, by + btn_h // 2), cta.upper(), font=font_cta, fill=primary, anchor="mm")
 
@@ -711,19 +769,20 @@ def _layout_bold(draw, w, h, brand, tagline, desc, cta, primary, secondary, cf=N
         draw.text((pad, y), line, font=font_tag, fill=text_color)
         y += int(h * 0.066)
 
-    # Description
-    font_desc = _load_font(int(h * 0.027), cf)
-    desc_lines = _wrap_text(desc, font_desc, w - pad * 2, draw)
-    y_desc = int(h * 0.63)
-    for line in desc_lines:
-        draw.text((pad, y_desc), line, font=font_desc, fill=muted)
-        y_desc += int(h * 0.037)
-
     # CTA — wide, rounded rect
     font_cta = _load_font(int(h * 0.036), cf)
     btn_w, btn_h = int(w * 0.82), int(h * 0.082)
     bx = (w - btn_w) // 2
     by = int(h * 0.855)
+
+    # Description
+    font_desc = _load_font(int(h * 0.027), cf)
+    desc_step = _text_line_step(font_desc, draw, int(h * 0.037))
+    y_desc = max(int(h * 0.63), y + int(h * 0.030))
+    desc_bottom = by - int(h * 0.035)
+    desc_lines = _fit_text_lines(desc, font_desc, w - pad * 2, draw, desc_bottom - y_desc, desc_step)
+    _draw_text_lines(draw, desc_lines, pad, y_desc, font_desc, muted, desc_step)
+
     draw.rounded_rectangle([bx, by, bx + btn_w, by + btn_h], radius=10, fill=secondary)
     draw.text((w // 2, by + btn_h // 2), cta.upper(), font=font_cta, fill=accent_btn, anchor="mm")
 
@@ -784,20 +843,21 @@ def _layout_glass(draw, img, w, h, brand, tagline, desc, cta, primary, secondary
         draw.text((w // 2, y), line, font=font_tag, fill=text_color, anchor="mm")
         y += int(h * 0.063)
 
-    # Description — muted
-    font_desc = _load_font(int(h * 0.026), cf)
-    desc_lines = _wrap_text(desc, font_desc, inner_w, draw)
-    muted = _blend(text_color, glass_color, 0.40)
-    y_desc = card_y1 + int(h * 0.510)
-    for line in desc_lines:
-        draw.text((w // 2, y_desc), line, font=font_desc, fill=muted, anchor="mm")
-        y_desc += int(h * 0.035)
-
     # CTA button
     font_cta = _load_font(int(h * 0.034), cf)
     btn_w, btn_h = int(inner_w * 0.78), int(h * 0.074)
     bx = (w - btn_w) // 2
     by = card_y2 - btn_h - int(h * 0.044)
+
+    # Description
+    font_desc = _load_font(int(h * 0.026), cf)
+    desc_step = _text_line_step(font_desc, draw, int(h * 0.035))
+    muted = _blend(text_color, glass_color, 0.40)
+    y_desc = max(card_y1 + int(h * 0.510), y + int(h * 0.030))
+    desc_bottom = by - int(h * 0.035)
+    desc_lines = _fit_text_lines(desc, font_desc, inner_w, draw, desc_bottom - y_desc, desc_step)
+    _draw_text_lines(draw, desc_lines, w // 2, y_desc, font_desc, muted, desc_step, anchor="mm")
+
     draw.rounded_rectangle([bx, by, bx + btn_w, by + btn_h], radius=btn_h // 2, fill=secondary)
     draw.text((w // 2, by + btn_h // 2), cta.upper(), font=font_cta, fill=accent_btn, anchor="mm")
 

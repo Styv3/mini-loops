@@ -1656,6 +1656,16 @@ select {
   grid-column: 1 / -1;
 }
 
+#ads-grid .ad-card[data-source="stock"] {
+  grid-column: 1 / -1;
+  justify-self: stretch;
+  width: 100%;
+}
+
+.results-layout.history-inline #ads-grid .ad-card[data-source="stock"] {
+  grid-column: 1;
+}
+
 .ad-card {
   background:
     linear-gradient(180deg, rgba(255,255,255,0.075), rgba(255,255,255,0.025)),
