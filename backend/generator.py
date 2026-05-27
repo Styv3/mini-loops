@@ -195,31 +195,22 @@ def _text_line_step(font, draw: ImageDraw, fallback: int) -> int:
         return max(1, fallback)
 
 
-def _ellipsize_line(text: str, font, max_width: int, draw: ImageDraw) -> str:
-    suffix = "..."
-    text = text.strip()
-    if not text:
-        return ""
-    while text:
-        candidate = f"{text}{suffix}"
-        if draw.textbbox((0, 0), candidate, font=font)[2] <= max_width:
-            return candidate
-        text = text[:-1].rstrip()
-    return suffix if draw.textbbox((0, 0), suffix, font=font)[2] <= max_width else ""
+def _fit_full_text_block(text: str, base_size: int, custom_path: str | None, max_width: int, draw: ImageDraw, max_height: int) -> tuple:
+    if not text or max_width <= 0 or max_height <= 0:
+        font = _load_font(max(8, base_size), custom_path)
+        return font, [], 1
 
+    min_size = 2
+    for size in range(max(8, base_size), min_size - 1, -1):
+        font = _load_font(size, custom_path)
+        line_step = _text_line_step(font, draw, max(1, int(size * 1.38)))
+        lines = _wrap_text(text, font, max_width, draw)
+        if len(lines) * line_step <= max_height:
+            return font, lines, line_step
 
-def _fit_text_lines(text: str, font, max_width: int, draw: ImageDraw, max_height: int, line_step: int) -> list[str]:
-    if not text or max_width <= 0 or max_height <= 0 or line_step <= 0:
-        return []
-    lines = _wrap_text(text, font, max_width, draw)
-    max_lines = max(0, int(max_height // line_step))
-    if max_lines <= 0:
-        return []
-    if len(lines) <= max_lines:
-        return lines
-    fitted = lines[:max_lines]
-    fitted[-1] = _ellipsize_line(fitted[-1], font, max_width, draw)
-    return [line for line in fitted if line]
+    font = _load_font(min_size, custom_path)
+    line_step = _text_line_step(font, draw, max(1, int(min_size * 1.30)))
+    return font, _wrap_text(text, font, max_width, draw), line_step
 
 
 def _draw_text_lines(draw: ImageDraw, lines: list[str], x: int, y: int, font, fill, line_step: int, anchor: str | None = None):
@@ -504,11 +495,9 @@ def _photo_overlay(bg, w, h, brand, tagline, desc, cta, primary, secondary, cf=N
     bx, by = pad, int(h * 0.87)
 
     # Description
-    font_desc = _load_font(int(h * 0.030), cf)
-    desc_step = _text_line_step(font_desc, draw, int(h * 0.040))
     y_desc = y + int(h * 0.02)
     desc_bottom = by - int(h * 0.035)
-    lines = _fit_text_lines(desc, font_desc, w - pad * 2, draw, desc_bottom - y_desc, desc_step)
+    font_desc, lines, desc_step = _fit_full_text_block(desc, int(h * 0.030), cf, w - pad * 2, draw, desc_bottom - y_desc)
     _draw_text_lines(draw, lines, pad, y_desc, font_desc, (200, 200, 210), desc_step)
 
     draw.rounded_rectangle([bx, by, bx + btn_w, by + btn_h], radius=btn_h // 2, fill=secondary)
@@ -552,11 +541,9 @@ def _photo_split(bg, w, h, brand, tagline, desc, cta, primary, secondary, cf=Non
     bx, by = pad, int(h * 0.83)
 
     # Description
-    font_desc = _load_font(int(h * 0.028), cf)
-    desc_step = _text_line_step(font_desc, draw, int(h * 0.038))
     y_desc = max(int(h * 0.57), y + int(h * 0.035))
     desc_bottom = by - int(h * 0.035)
-    lines = _fit_text_lines(desc, font_desc, half - pad * 2, draw, desc_bottom - y_desc, desc_step)
+    font_desc, lines, desc_step = _fit_full_text_block(desc, int(h * 0.028), cf, half - pad * 2, draw, desc_bottom - y_desc)
     _draw_text_lines(draw, lines, pad, y_desc, font_desc, text_color, desc_step)
 
     draw.rounded_rectangle([bx, by, bx + btn_w, by + btn_h], radius=6, fill=secondary)
@@ -611,11 +598,9 @@ def _photo_frame(bg, w, h, brand, tagline, desc, cta, primary, secondary, cf=Non
     bx = (w - btn_w) // 2
     by = pad_y + card_h - btn_h - int(h * 0.06)
 
-    font_desc = _load_font(int(h * 0.027), cf)
-    desc_step = _text_line_step(font_desc, draw, int(h * 0.037))
     y_desc = max(pad_y + int(h * 0.50), y + int(h * 0.030))
     desc_bottom = by - int(h * 0.035)
-    lines = _fit_text_lines(desc, font_desc, inner_w, draw, desc_bottom - y_desc, desc_step)
+    font_desc, lines, desc_step = _fit_full_text_block(desc, int(h * 0.027), cf, inner_w, draw, desc_bottom - y_desc)
     _draw_text_lines(draw, lines, w // 2, y_desc, font_desc, white, desc_step, anchor="mm")
 
     draw.rounded_rectangle([bx, by, bx + btn_w, by + btn_h], radius=btn_h // 2, fill=secondary)
@@ -671,11 +656,9 @@ def _layout_centered(draw, w, h, brand, tagline, desc, cta, primary, secondary, 
     bx, by = pad, int(h * 0.865)
 
     # Description
-    font_desc = _load_font(int(h * 0.028), cf)
-    desc_step = _text_line_step(font_desc, draw, int(h * 0.038))
     y_desc = max(int(h * 0.55), y + int(h * 0.030))
     desc_bottom = by - int(h * 0.035)
-    desc_lines = _fit_text_lines(desc, font_desc, w - pad * 2, draw, desc_bottom - y_desc, desc_step)
+    font_desc, desc_lines, desc_step = _fit_full_text_block(desc, int(h * 0.028), cf, w - pad * 2, draw, desc_bottom - y_desc)
     _draw_text_lines(draw, desc_lines, pad, y_desc, font_desc, muted, desc_step)
 
     draw.rounded_rectangle([bx, by, bx + btn_w, by + btn_h], radius=btn_h // 2, fill=secondary)
@@ -716,11 +699,9 @@ def _layout_split(draw, img, w, h, brand, tagline, desc, cta, primary, secondary
     bx, by = pad, int(h * 0.82)
 
     # Left: description
-    font_desc = _load_font(int(h * 0.026), cf)
-    desc_step = _text_line_step(font_desc, draw, int(h * 0.037))
     y_desc = int(h * 0.30)
     desc_bottom = by - int(h * 0.035)
-    desc_lines = _fit_text_lines(desc, font_desc, half - pad * 2, draw, desc_bottom - y_desc, desc_step)
+    font_desc, desc_lines, desc_step = _fit_full_text_block(desc, int(h * 0.026), cf, half - pad * 2, draw, desc_bottom - y_desc)
     _draw_text_lines(draw, desc_lines, pad, y_desc, font_desc, muted_left, desc_step)
 
     draw.rounded_rectangle([bx, by, bx + btn_w, by + btn_h], radius=6, fill=text_left)
@@ -776,11 +757,9 @@ def _layout_bold(draw, w, h, brand, tagline, desc, cta, primary, secondary, cf=N
     by = int(h * 0.855)
 
     # Description
-    font_desc = _load_font(int(h * 0.027), cf)
-    desc_step = _text_line_step(font_desc, draw, int(h * 0.037))
     y_desc = max(int(h * 0.63), y + int(h * 0.030))
     desc_bottom = by - int(h * 0.035)
-    desc_lines = _fit_text_lines(desc, font_desc, w - pad * 2, draw, desc_bottom - y_desc, desc_step)
+    font_desc, desc_lines, desc_step = _fit_full_text_block(desc, int(h * 0.027), cf, w - pad * 2, draw, desc_bottom - y_desc)
     _draw_text_lines(draw, desc_lines, pad, y_desc, font_desc, muted, desc_step)
 
     draw.rounded_rectangle([bx, by, bx + btn_w, by + btn_h], radius=10, fill=secondary)
@@ -850,12 +829,10 @@ def _layout_glass(draw, img, w, h, brand, tagline, desc, cta, primary, secondary
     by = card_y2 - btn_h - int(h * 0.044)
 
     # Description
-    font_desc = _load_font(int(h * 0.026), cf)
-    desc_step = _text_line_step(font_desc, draw, int(h * 0.035))
     muted = _blend(text_color, glass_color, 0.40)
     y_desc = max(card_y1 + int(h * 0.510), y + int(h * 0.030))
     desc_bottom = by - int(h * 0.035)
-    desc_lines = _fit_text_lines(desc, font_desc, inner_w, draw, desc_bottom - y_desc, desc_step)
+    font_desc, desc_lines, desc_step = _fit_full_text_block(desc, int(h * 0.026), cf, inner_w, draw, desc_bottom - y_desc)
     _draw_text_lines(draw, desc_lines, w // 2, y_desc, font_desc, muted, desc_step, anchor="mm")
 
     draw.rounded_rectangle([bx, by, bx + btn_w, by + btn_h], radius=btn_h // 2, fill=secondary)
