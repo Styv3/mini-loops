@@ -258,6 +258,101 @@ def _resize_cover(img: Image.Image, width: int, height: int) -> Image.Image:
     return resized.crop((left, top, left + width, top + height))
 
 
+def _crop_flat_frame(img: Image.Image) -> Image.Image:
+    """Remove large uniform stock-image frames before scaling."""
+    def _largest_run(values: list[int]) -> tuple[int, int] | None:
+        if not values:
+            return None
+        best = (values[0], values[0])
+        start = prev = values[0]
+        for value in values[1:]:
+            if value == prev + 1:
+                prev = value
+                continue
+            if prev - start > best[1] - best[0]:
+                best = (start, prev)
+            start = prev = value
+        if prev - start > best[1] - best[0]:
+            best = (start, prev)
+        return best
+
+    src = img.convert("RGB")
+    sw = 240
+    sh = max(1, round(sw * src.height / max(src.width, 1)))
+    small = src.resize((sw, sh), Image.BILINEAR)
+    pix = small.load()
+
+    edge = max(3, min(sw, sh) // 25)
+    bins: dict[tuple[int, int, int], list[tuple[int, int, int]]] = {}
+    edge_count = 0
+    for y in range(sh):
+        for x in range(sw):
+            if x >= edge and x < sw - edge and y >= edge and y < sh - edge:
+                continue
+            rgb = pix[x, y]
+            key = tuple(v // 16 for v in rgb)
+            bins.setdefault(key, []).append(rgb)
+            edge_count += 1
+
+    if not bins:
+        return src
+
+    dominant = max(bins.values(), key=len)
+    if len(dominant) / max(edge_count, 1) < 0.45:
+        return src
+
+    border = tuple(sum(c[i] for c in dominant) // len(dominant) for i in range(3))
+
+    def differs(rgb: tuple[int, int, int]) -> bool:
+        return sum((rgb[i] - border[i]) ** 2 for i in range(3)) ** 0.5 > 58
+
+    col_counts = [0] * sw
+    row_counts = [0] * sh
+    for y in range(sh):
+        for x in range(sw):
+            if differs(pix[x, y]):
+                col_counts[x] += 1
+                row_counts[y] += 1
+
+    min_col = max(3, int(sh * 0.075))
+    min_row = max(3, int(sw * 0.075))
+    xs = [i for i, count in enumerate(col_counts) if count >= min_col]
+    ys = [i for i, count in enumerate(row_counts) if count >= min_row]
+    x_run = _largest_run(xs)
+    y_run = _largest_run(ys)
+    if not x_run or not y_run:
+        return src
+
+    left, right = x_run[0], x_run[1] + 1
+    top, bottom = y_run[0], y_run[1] + 1
+    crop_w = right - left
+    crop_h = bottom - top
+    if crop_w > sw * 0.90 and crop_h > sh * 0.90:
+        return src
+    if crop_w < sw * 0.25 or crop_h < sh * 0.15:
+        return src
+
+    margin_x = max(1, int(crop_w * 0.035))
+    margin_y = 0
+    left = max(0, left - margin_x)
+    right = min(sw, right + margin_x)
+    top = max(0, top - margin_y)
+    bottom = min(sh, bottom + margin_y)
+
+    scale_x = src.width / sw
+    scale_y = src.height / sh
+    box = (
+        int(left * scale_x),
+        int(top * scale_y),
+        int(right * scale_x),
+        int(bottom * scale_y),
+    )
+    if box[2] <= box[0] or box[3] <= box[1]:
+        return src
+    print(f"[_crop_flat_frame] cropped stock frame {src.size} -> {(box[2] - box[0], box[3] - box[1])}")
+    return src.crop(box)
+
+
 def _apply_overlay(img: Image.Image, primary: tuple, opacity: int = 160) -> Image.Image:
     """Darkened tinted gradient overlay for text readability."""
     w, h = img.size
@@ -321,7 +416,7 @@ def fetch_background(sector: str, hint: str, width: int, height: int, source: st
             with urllib.request.urlopen(req, timeout=20) as resp:
                 data = resp.read()
             img = Image.open(io.BytesIO(data)).convert("RGB")
-            return _resize_cover(img, width, height)
+            return _resize_cover(_crop_flat_frame(img), width, height)
         except Exception as e:
             print(f"[fetch_background] stock failed: {e}")
             return None
