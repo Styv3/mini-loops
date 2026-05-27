@@ -1660,10 +1660,12 @@ select {
   grid-column: 1 / -1;
   justify-self: stretch;
   width: 100%;
+  max-width: none;
 }
 
-.results-layout.history-inline #ads-grid .ad-card[data-source="stock"] {
-  grid-column: 1;
+#ads-grid .ad-card[data-source="stock"][data-format="story"] {
+  width: 100%;
+  max-width: none;
 }
 
 .ad-card {
