@@ -213,6 +213,35 @@ def _fit_full_text_block(text: str, base_size: int, custom_path: str | None, max
     return font, _wrap_text(text, font, max_width, draw), line_step
 
 
+def _fit_single_line_font(text: str, base_size: int, custom_path: str | None, max_width: int, draw: ImageDraw) -> ImageFont.ImageFont:
+    min_size = max(7, int(base_size * 0.45))
+    for size in range(max(8, base_size), min_size - 1, -1):
+        font = _load_font(size, custom_path)
+        bbox = draw.textbbox((0, 0), text, font=font)
+        if bbox[2] - bbox[0] <= max_width:
+            return font
+    return _load_font(min_size, custom_path)
+
+
+def _draw_cta_button(
+    draw: ImageDraw,
+    box: tuple[int, int, int, int],
+    text: str,
+    base_size: int,
+    custom_path: str | None,
+    fill,
+    text_fill,
+    radius: int,
+    pad_ratio: float = 0.12,
+):
+    x1, y1, x2, y2 = box
+    btn_w = max(1, x2 - x1)
+    text_pad = max(8, int(btn_w * pad_ratio))
+    font = _fit_single_line_font(text, base_size, custom_path, max(1, btn_w - text_pad * 2), draw)
+    draw.rounded_rectangle([x1, y1, x2, y2], radius=radius, fill=fill)
+    draw.text(((x1 + x2) // 2, (y1 + y2) // 2), text, font=font, fill=text_fill, anchor="mm")
+
+
 def _draw_text_lines(draw: ImageDraw, lines: list[str], x: int, y: int, font, fill, line_step: int, anchor: str | None = None):
     for line in lines:
         if anchor:
@@ -595,10 +624,8 @@ def _photo_overlay(bg, w, h, brand, tagline, desc, cta, primary, secondary, cf=N
     font_desc, lines, desc_step = _fit_full_text_block(desc, int(h * 0.030), cf, w - pad * 2, draw, desc_bottom - y_desc)
     _draw_text_lines(draw, lines, pad, y_desc, font_desc, (200, 200, 210), desc_step)
 
-    draw.rounded_rectangle([bx, by, bx + btn_w, by + btn_h], radius=btn_h // 2, fill=secondary)
     accent = _contrast_color(secondary)
-    font_cta = _load_font(int(h * 0.034), cf)
-    draw.text((bx + btn_w // 2, by + btn_h // 2), cta.upper(), font=font_cta, fill=accent, anchor="mm")
+    _draw_cta_button(draw, (bx, by, bx + btn_w, by + btn_h), cta.upper(), int(h * 0.034), cf, secondary, accent, btn_h // 2)
 
     return img
 
@@ -632,7 +659,7 @@ def _photo_split(bg, w, h, brand, tagline, desc, cta, primary, secondary, cf=Non
         y += int(h * 0.057)
 
     # CTA
-    btn_w, btn_h = int(half * 0.80), int(h * 0.072)
+    btn_w, btn_h = int(half - pad * 1.15), int(h * 0.072)
     bx, by = pad, int(h * 0.83)
 
     # Description
@@ -641,10 +668,8 @@ def _photo_split(bg, w, h, brand, tagline, desc, cta, primary, secondary, cf=Non
     font_desc, lines, desc_step = _fit_full_text_block(desc, int(h * 0.028), cf, half - pad * 2, draw, desc_bottom - y_desc)
     _draw_text_lines(draw, lines, pad, y_desc, font_desc, text_color, desc_step)
 
-    draw.rounded_rectangle([bx, by, bx + btn_w, by + btn_h], radius=6, fill=secondary)
     accent = _contrast_color(secondary)
-    font_cta = _load_font(int(h * 0.032), cf)
-    draw.text((bx + btn_w // 2, by + btn_h // 2), cta.upper(), font=font_cta, fill=accent, anchor="mm")
+    _draw_cta_button(draw, (bx, by, bx + btn_w, by + btn_h), cta.upper(), int(h * 0.032), cf, secondary, accent, 6, pad_ratio=0.08)
 
     # Thin divider line
     draw.rectangle([(half - 1, 0), (half + 1, h)], fill=secondary)
@@ -698,10 +723,8 @@ def _photo_frame(bg, w, h, brand, tagline, desc, cta, primary, secondary, cf=Non
     font_desc, lines, desc_step = _fit_full_text_block(desc, int(h * 0.027), cf, inner_w, draw, desc_bottom - y_desc)
     _draw_text_lines(draw, lines, w // 2, y_desc, font_desc, white, desc_step, anchor="mm")
 
-    draw.rounded_rectangle([bx, by, bx + btn_w, by + btn_h], radius=btn_h // 2, fill=secondary)
     accent = _contrast_color(secondary)
-    font_cta = _load_font(int(h * 0.032), cf)
-    draw.text((w // 2, by + btn_h // 2), cta.upper(), font=font_cta, fill=accent, anchor="mm")
+    _draw_cta_button(draw, (bx, by, bx + btn_w, by + btn_h), cta.upper(), int(h * 0.032), cf, secondary, accent, btn_h // 2)
 
     return img
 
@@ -746,7 +769,6 @@ def _layout_centered(draw, w, h, brand, tagline, desc, cta, primary, secondary, 
         y += int(h * 0.078)
 
     # CTA pill button
-    font_cta = _load_font(int(h * 0.034), cf)
     btn_w, btn_h = int(w * 0.58), int(h * 0.076)
     bx, by = pad, int(h * 0.865)
 
@@ -756,8 +778,7 @@ def _layout_centered(draw, w, h, brand, tagline, desc, cta, primary, secondary, 
     font_desc, desc_lines, desc_step = _fit_full_text_block(desc, int(h * 0.028), cf, w - pad * 2, draw, desc_bottom - y_desc)
     _draw_text_lines(draw, desc_lines, pad, y_desc, font_desc, muted, desc_step)
 
-    draw.rounded_rectangle([bx, by, bx + btn_w, by + btn_h], radius=btn_h // 2, fill=secondary)
-    draw.text((bx + btn_w // 2, by + btn_h // 2), cta.upper(), font=font_cta, fill=accent_btn, anchor="mm")
+    _draw_cta_button(draw, (bx, by, bx + btn_w, by + btn_h), cta.upper(), int(h * 0.034), cf, secondary, accent_btn, btn_h // 2)
 
     # Bottom decorative line
     draw.rectangle([(0, h - 4), (w, h)], fill=secondary)
@@ -789,8 +810,7 @@ def _layout_split(draw, img, w, h, brand, tagline, desc, cta, primary, secondary
     draw.rectangle([(pad, sep_y), (pad + int(w * 0.07), sep_y + 3)], fill=secondary)
 
     # Left: CTA
-    font_cta = _load_font(int(h * 0.032), cf)
-    btn_w, btn_h = int(half * 0.78), int(h * 0.07)
+    btn_w, btn_h = int(half - pad * 1.20), int(h * 0.07)
     bx, by = pad, int(h * 0.82)
 
     # Left: description
@@ -799,8 +819,7 @@ def _layout_split(draw, img, w, h, brand, tagline, desc, cta, primary, secondary
     font_desc, desc_lines, desc_step = _fit_full_text_block(desc, int(h * 0.026), cf, half - pad * 2, draw, desc_bottom - y_desc)
     _draw_text_lines(draw, desc_lines, pad, y_desc, font_desc, muted_left, desc_step)
 
-    draw.rounded_rectangle([bx, by, bx + btn_w, by + btn_h], radius=6, fill=text_left)
-    draw.text((bx + btn_w // 2, by + btn_h // 2), cta.upper(), font=font_cta, fill=primary, anchor="mm")
+    _draw_cta_button(draw, (bx, by, bx + btn_w, by + btn_h), cta.upper(), int(h * 0.032), cf, text_left, primary, 6, pad_ratio=0.08)
 
     # Right: tagline — large
     font_tag = _load_font(int(h * 0.056), cf)
@@ -846,7 +865,6 @@ def _layout_bold(draw, w, h, brand, tagline, desc, cta, primary, secondary, cf=N
         y += int(h * 0.066)
 
     # CTA — wide, rounded rect
-    font_cta = _load_font(int(h * 0.036), cf)
     btn_w, btn_h = int(w * 0.82), int(h * 0.082)
     bx = (w - btn_w) // 2
     by = int(h * 0.855)
@@ -857,8 +875,7 @@ def _layout_bold(draw, w, h, brand, tagline, desc, cta, primary, secondary, cf=N
     font_desc, desc_lines, desc_step = _fit_full_text_block(desc, int(h * 0.027), cf, w - pad * 2, draw, desc_bottom - y_desc)
     _draw_text_lines(draw, desc_lines, pad, y_desc, font_desc, muted, desc_step)
 
-    draw.rounded_rectangle([bx, by, bx + btn_w, by + btn_h], radius=10, fill=secondary)
-    draw.text((w // 2, by + btn_h // 2), cta.upper(), font=font_cta, fill=accent_btn, anchor="mm")
+    _draw_cta_button(draw, (bx, by, bx + btn_w, by + btn_h), cta.upper(), int(h * 0.036), cf, secondary, accent_btn, 10)
 
     # Corner accent dots
     r = int(w * 0.015)
@@ -918,7 +935,6 @@ def _layout_glass(draw, img, w, h, brand, tagline, desc, cta, primary, secondary
         y += int(h * 0.063)
 
     # CTA button
-    font_cta = _load_font(int(h * 0.034), cf)
     btn_w, btn_h = int(inner_w * 0.78), int(h * 0.074)
     bx = (w - btn_w) // 2
     by = card_y2 - btn_h - int(h * 0.044)
@@ -930,8 +946,7 @@ def _layout_glass(draw, img, w, h, brand, tagline, desc, cta, primary, secondary
     font_desc, desc_lines, desc_step = _fit_full_text_block(desc, int(h * 0.026), cf, inner_w, draw, desc_bottom - y_desc)
     _draw_text_lines(draw, desc_lines, w // 2, y_desc, font_desc, muted, desc_step, anchor="mm")
 
-    draw.rounded_rectangle([bx, by, bx + btn_w, by + btn_h], radius=btn_h // 2, fill=secondary)
-    draw.text((w // 2, by + btn_h // 2), cta.upper(), font=font_cta, fill=accent_btn, anchor="mm")
+    _draw_cta_button(draw, (bx, by, bx + btn_w, by + btn_h), cta.upper(), int(h * 0.034), cf, secondary, accent_btn, btn_h // 2)
 
     # Decorative corner circles in background (outside card)
     deco = _blend(primary, secondary, 0.30)
