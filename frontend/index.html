@@ -99,52 +99,53 @@
 
       <!-- LEFT: Brand config -->
       <div>
-        <div class="card">
-          <h3>Ta publicité en quelques secondes</h3>
+        <div class="card brand-card">
+          <div class="brand-card-body">
+            <h3>Ta publicité en quelques secondes</h3>
 
-          <!-- ── CHAMPS ESSENTIELS (toujours visibles) ── -->
-          <div class="field">
-            <label>Nom de la marque</label>
-            <input type="text" id="brand-name" placeholder="Ex : GlowSkin" value="GlowSkin" />
-          </div>
+            <!-- ── CHAMPS ESSENTIELS (toujours visibles) ── -->
+            <div class="field">
+              <label>Nom de la marque</label>
+              <input type="text" id="brand-name" placeholder="Ex : GlowSkin" value="GlowSkin" />
+            </div>
 
-          <div class="field">
-            <label>Tagline / Accroche</label>
-            <input type="text" id="tagline" placeholder="Ex : 90% ont vu des résultats en 30 jours" />
-          </div>
+            <div class="field">
+              <label>Tagline / Accroche</label>
+              <input type="text" id="tagline" placeholder="Ex : 90% ont vu des résultats en 30 jours" />
+            </div>
 
-          <div class="field">
-            <label>Call to action</label>
-            <input type="text" id="cta" placeholder="Ex : Shop Now" />
-          </div>
+            <div class="field">
+              <label>Call to action</label>
+              <input type="text" id="cta" placeholder="Ex : Shop Now" />
+            </div>
 
-          <!-- Live color preview -->
-          <div class="field">
-            <label style="display:flex;align-items:center;gap:6px;">
-              Couleurs de la marque
-              <span id="color-preview-label" style="font-size:0.72rem;color:var(--text-light);font-weight:400;">Aperçu live</span>
-            </label>
-            <div id="color-preview" class="color-preview"></div>
-            <div class="color-row" style="margin-top:8px;">
-              <div class="color-field">
-                <input type="color" id="primary-color" value="#000000" />
-                <input type="text" id="primary-hex" value="#000000" maxlength="7" />
-              </div>
-              <div class="color-field">
-                <input type="color" id="secondary-color" value="#e94560" />
-                <input type="text" id="secondary-hex" value="#e94560" maxlength="7" />
+            <!-- Live color preview -->
+            <div class="field">
+              <label style="display:flex;align-items:center;gap:6px;">
+                Couleurs de la marque
+                <span id="color-preview-label" style="font-size:0.72rem;color:var(--text-light);font-weight:400;">Aperçu live</span>
+              </label>
+              <div id="color-preview" class="color-preview"></div>
+              <div class="color-row" style="margin-top:8px;">
+                <div class="color-field">
+                  <input type="color" id="primary-color" value="#000000" />
+                  <input type="text" id="primary-hex" value="#000000" maxlength="7" />
+                </div>
+                <div class="color-field">
+                  <input type="color" id="secondary-color" value="#e94560" />
+                  <input type="text" id="secondary-hex" value="#e94560" maxlength="7" />
+                </div>
               </div>
             </div>
-          </div>
 
-          <!-- ── TOGGLE AVANCÉ ── -->
-          <button class="advanced-toggle" id="btn-advanced-toggle">
-            <span>⚙ Paramètres avancés</span>
-            <span class="toggle-arrow">▾</span>
-          </button>
+            <!-- ── TOGGLE AVANCÉ ── -->
+            <button class="advanced-toggle" id="btn-advanced-toggle">
+              <span>⚙ Paramètres avancés</span>
+              <span class="toggle-arrow">▾</span>
+            </button>
 
-          <!-- ── SECTION AVANCÉE (cachée par défaut) ── -->
-          <div class="advanced-section" id="advanced-section" style="display:none;">
+            <!-- ── SECTION AVANCÉE (cachée par défaut) ── -->
+            <div class="advanced-section" id="advanced-section" style="display:none;">
 
             <div class="field" style="margin-top:12px;">
               <label>Description courte</label>
@@ -298,24 +299,27 @@
               <div id="kit-list" class="kit-list"></div>
             </div>
 
-          </div><!-- /advanced-section -->
+            </div><!-- /advanced-section -->
+          </div><!-- /brand-card-body -->
 
-          <!-- ── ACTIONS ── -->
-          <div style="display:flex;gap:8px;margin-top:14px;">
-            <button class="btn btn-secondary btn-sm" id="btn-suggest" style="flex:1;">
-              ✦ Suggérer un copy
-            </button>
+          <div class="brand-card-footer">
+            <!-- ── ACTIONS ── -->
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-secondary btn-sm" id="btn-suggest" style="flex:1;">
+                ✦ Suggérer un copy
+              </button>
+            </div>
+
+            <div id="copy-variants-panel" class="copy-variants-panel" style="display:none;"></div>
+
+            <div style="margin-top:10px;">
+              <button class="btn btn-primary" id="btn-generate">
+                Générer les publicités
+              </button>
+            </div>
+
+            <div id="gen-status" class="status" style="display:none;"></div>
           </div>
-
-          <div id="copy-variants-panel" class="copy-variants-panel" style="display:none;"></div>
-
-          <div style="margin-top:10px;">
-            <button class="btn btn-primary" id="btn-generate">
-              Générer les publicités
-            </button>
-          </div>
-
-          <div id="gen-status" class="status" style="display:none;"></div>
         </div>
       </div>
 
@@ -335,23 +339,25 @@
           <span>Si les visuels générés ne s’affichent pas, désactive ton bloqueur de pub sur cette page.</span>
         </div>
 
-        <div id="ads-grid">
-          <div class="empty-state">
-            <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
-              <rect x="3" y="3" width="18" height="18" rx="3"/>
-              <circle cx="8.5" cy="8.5" r="1.5"/>
-              <polyline points="21 15 16 10 5 21"/>
-            </svg>
-            <p>Ton prochain lot de créations apparaîtra ici.<br/><strong>Générer les publicités</strong></p>
+        <div id="results-layout" class="results-layout">
+          <div id="ads-grid">
+            <div class="empty-state">
+              <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+                <rect x="3" y="3" width="18" height="18" rx="3"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
+              </svg>
+              <p>Ton prochain lot de créations apparaîtra ici.<br/><strong>Générer les publicités</strong></p>
+            </div>
           </div>
-        </div>
 
-        <!-- History -->
-        <div id="history-section" style="display:none;margin-top:32px;">
-          <div class="section-header">
-            <h2>Historique de session</h2>
+          <!-- History -->
+          <div id="history-section" style="display:none;margin-top:32px;">
+            <div class="section-header">
+              <h2>Historique de session</h2>
+            </div>
+            <div id="history-list" class="history-list"></div>
           </div>
-          <div id="history-list" class="history-list"></div>
         </div>
       </div>
 

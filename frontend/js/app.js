@@ -70,6 +70,7 @@ function _abortTimeout(ms) {
 // Navigation
 // ---------------------------------------------------------------------------
 function showPage(name) {
+  document.body.dataset.page = name;
   $$(".page").forEach(p => p.classList.toggle("active", p.id === `page-${name}`));
   $$("nav button").forEach(b => b.classList.toggle("active", b.dataset.page === name));
 }
@@ -313,7 +314,9 @@ function applyConfig(cfg) {
     $("#secondary-color").value = c;
   }
   if (cfg.selected_formats || cfg.selectedFormats) {
-    state.selectedFormats = cfg.selected_formats || cfg.selectedFormats;
+    const formats = cfg.selected_formats || cfg.selectedFormats;
+    const selected = Array.isArray(formats) ? formats[0] : formats;
+    state.selectedFormats = [state.formats.includes(selected) ? selected : "feed"];
     initFormatButtons();
   }
   if (cfg.image_source || cfg.imageSource) {
@@ -472,21 +475,18 @@ function initSectorPicker() {
 function initFormatButtons() {
   const grid = $("#format-grid");
   const defs = { feed: [40, 40], story: [23, 40], banner: [40, 21] };
+  const selected = state.formats.includes(state.selectedFormats[0]) ? state.selectedFormats[0] : "feed";
+  state.selectedFormats = [selected];
   grid.innerHTML = "";
   state.formats.forEach((fmt) => {
     const btn = document.createElement("div");
-    btn.className = "fmt-btn" + (state.selectedFormats.includes(fmt) ? " selected" : "");
+    btn.className = "fmt-btn" + (state.selectedFormats[0] === fmt ? " selected" : "");
     btn.dataset.fmt = fmt;
     const [w, h] = defs[fmt];
     btn.innerHTML = `<div class="fmt-thumb" style="width:${w}px;height:${h}px;"></div><span>${fmt}</span>`;
     btn.addEventListener("click", () => {
-      if (state.selectedFormats.includes(fmt)) {
-        if (state.selectedFormats.length === 1) return;
-        state.selectedFormats = state.selectedFormats.filter((f) => f !== fmt);
-      } else {
-        state.selectedFormats.push(fmt);
-      }
-      btn.classList.toggle("selected");
+      state.selectedFormats = [fmt];
+      initFormatButtons();
       saveBrandConfig();
     });
     grid.appendChild(btn);
@@ -570,11 +570,12 @@ function closeLightbox() {
 // Progress bar
 // ---------------------------------------------------------------------------
 function showProgress(container, total) {
-  let wrap = container.querySelector(".progress-wrap");
+  const host = container.querySelector(".brand-card-footer") || container;
+  let wrap = host.querySelector(".progress-wrap");
   if (!wrap) {
     wrap = document.createElement("div");
     wrap.className = "progress-wrap";
-    container.appendChild(wrap);
+    host.appendChild(wrap);
   }
   wrap.innerHTML = `<div class="progress-bar"><div class="progress-fill" style="width:0%"></div></div><div class="progress-label">Préparation…</div>`;
   wrap.style.display = "block";
@@ -670,6 +671,19 @@ async function _postGenerateBatch(payload, timeoutMs) {
     const data = await res.json();
     return data.ads || [];
   });
+}
+
+const AI_BACKGROUND_UNAVAILABLE_CODE = "AI_BACKGROUND_UNAVAILABLE";
+const AI_BACKGROUND_UNAVAILABLE_MESSAGE = "Le fond IA n'a pas pu être généré. Réessaie dans quelques secondes ou passe temporairement en Stock/Couleurs.";
+
+function _aiBackgroundUnavailableError() {
+  const err = new Error(AI_BACKGROUND_UNAVAILABLE_MESSAGE);
+  err.code = AI_BACKGROUND_UNAVAILABLE_CODE;
+  return err;
+}
+
+function _actualAdSource(ad) {
+  return ad?.used_source || ad?.source || "none";
 }
 
 // ---------------------------------------------------------------------------
@@ -801,12 +815,23 @@ async function generateAds() {
   const batchTimeoutMs = Math.max(timeoutMs, isAI ? totalAds * secPerAd * 3000 + 45000 : 60000);
 
   try {
+    let rejectedAIFallbacks = 0;
+    let receivedAds = 0;
     const appendGeneratedAd = (ad) => {
-      ad.source = ad.used_source ?? state.imageSource;
+      receivedAds++;
+      const actualSource = _actualAdSource(ad);
+      const done = ad.done || receivedAds;
+      const total = ad.total || totalAds;
+
+      if (isAI && actualSource === "none") {
+        rejectedAIFallbacks++;
+        progress.update(done, "Fond IA indisponible — rendu couleurs ignoré");
+        return;
+      }
+
+      ad.source = actualSource;
       state.ads.push(ad);
       appendAd(ad, state.ads.length - 1);
-      const done = ad.done || state.ads.length;
-      const total = ad.total || totalAds;
       progress.update(done, `${done} / ${total} visuel${done > 1 ? "s" : ""} généré${done > 1 ? "s" : ""}`);
     };
 
@@ -824,6 +849,9 @@ async function generateAds() {
       ads.forEach((ad, i) => appendGeneratedAd({ ...ad, done: i + 1, total: ads.length }));
     }
 
+    if (isAI && !state.ads.length && rejectedAIFallbacks > 0) {
+      throw _aiBackgroundUnavailableError();
+    }
     if (!state.ads.length) throw new Error("Aucun visuel généré.");
     pushHistory(state.ads, config);
     _saveSessionAds();
@@ -834,19 +862,12 @@ async function generateAds() {
     $("#btn-mock-toggle").style.display = "inline-flex";
 
     if (isAI) {
-      const fallbacks = state.ads.filter(ad => ad.source === "none").length;
-      if (fallbacks === state.ads.length) {
-        // All AI failed — treat as session limit exhausted
-        progress.update(totalAds, "Limite de session IA atteinte");
-        _triggerAICooldown();
-      } else {
-        _ai.used++;
-        _saveAIState();
-        if (_aiRemaining() === 0) _triggerAICooldown();
-        progress.update(totalAds, fallbacks > 0 ? `Terminé (${fallbacks} en couleurs)` : "Terminé !");
-        if (fallbacks > 0) notify(`${fallbacks} visuel${fallbacks > 1 ? "s" : ""} en mode couleurs — quota IA partiel`, "error");
-        setTimeout(() => progress.hide(), 2000);
-      }
+      _ai.used++;
+      _saveAIState();
+      if (_aiRemaining() === 0) _triggerAICooldown();
+      progress.update(totalAds, rejectedAIFallbacks > 0 ? `Terminé (${rejectedAIFallbacks} rendu${rejectedAIFallbacks > 1 ? "s" : ""} ignoré${rejectedAIFallbacks > 1 ? "s" : ""})` : "Terminé !");
+      if (rejectedAIFallbacks > 0) notify(`${rejectedAIFallbacks} rendu${rejectedAIFallbacks > 1 ? "s" : ""} couleurs ignoré${rejectedAIFallbacks > 1 ? "s" : ""} : fond IA indisponible`, "error");
+      setTimeout(() => progress.hide(), 2000);
     } else {
       progress.update(totalAds, "Terminé !");
       setTimeout(() => progress.hide(), 2000);
@@ -854,12 +875,20 @@ async function generateAds() {
 
     if (SUPABASE_OK) dbSaveAds(state.ads, config).catch(console.error);
   } catch (err) {
-    const msg = err.name === "AbortError"
-      ? "Le serveur met trop de temps à répondre. Patiente quelques secondes puis réessaie."
-      : "Le serveur est en train de démarrer. Attends 20-30 secondes puis réessaie.";
+    const msg = err.code === AI_BACKGROUND_UNAVAILABLE_CODE
+      ? AI_BACKGROUND_UNAVAILABLE_MESSAGE
+      : isAI && err.name === "AbortError"
+        ? "Le fond IA met trop de temps à répondre. Réessaie dans quelques secondes."
+        : err.name === "AbortError"
+          ? "Le serveur met trop de temps à répondre. Patiente quelques secondes puis réessaie."
+          : isAI
+            ? "La génération IA n'a pas abouti. Réessaie dans quelques secondes."
+            : "Le serveur est en train de démarrer. Attends 20-30 secondes puis réessaie.";
     status.style.display = "block";
     status.className = "status error";
     status.innerHTML = `${msg} <button class="btn btn-secondary btn-sm" style="margin-left:8px;" onclick="generateAds()">↺ Réessayer</button>`;
+    const emptyDetail = isAI ? "Aucun rendu couleurs n'a été conservé." : "Réessaie dans quelques secondes.";
+    grid.innerHTML = `<div class="empty-state"><p>${msg}<br/><strong>${emptyDetail}</strong></p></div>`;
     progress.hide();
     checkHealth();
   } finally {
@@ -877,7 +906,11 @@ const SOURCE_LABELS = { none: "Couleurs", stock: "Stock", ai: "IA" };
 function _buildAdCard(ad, i) {
   const sourceLabel = SOURCE_LABELS[ad.source] || "";
   const score = computePerformanceScore(getBrandConfig(), ad);
-  const scoreColor = score >= 80 ? "#22c55e" : score >= 60 ? "#f59e0b" : "#ef4444";
+  const scoreTone = score >= 80
+    ? { text: "#166534", bg: "#dcfce7", border: "rgba(22,101,52,0.22)" }
+    : score >= 60
+      ? { text: "#92400e", bg: "#ffedd5", border: "rgba(146,64,14,0.24)" }
+      : { text: "#991b1b", bg: "#fee2e2", border: "rgba(153,27,27,0.22)" };
   const card = document.createElement("div");
   card.className = "ad-card";
   card.dataset.format = ad.format;
@@ -893,7 +926,7 @@ function _buildAdCard(ad, i) {
         ${ad.width}×${ad.height} · V${ad.variant}
       </div>
       <div style="display:flex;align-items:center;gap:6px;">
-        <span class="perf-badge" style="background:${scoreColor}22;color:${scoreColor};border:1px solid ${scoreColor}44;" title="Score de performance estimé">${score}</span>
+        <span class="perf-badge" style="background:${scoreTone.bg};color:${scoreTone.text};border:1px solid ${scoreTone.border};" title="Score de performance estimé">${score}</span>
         <button class="btn btn-secondary btn-sm" title="Télécharger" onclick="downloadAd(${i})">↓</button>
       </div>
     </div>`;
@@ -917,6 +950,7 @@ function appendAd(ad, i) {
   const card = _buildAdCard(ad, i);
   grid.appendChild(card);
   if (state.mockMode) applyMockClasses();
+  updateHistoryLayout();
 }
 
 async function regenAd(index) {
@@ -954,7 +988,9 @@ async function regenAd(index) {
     let replacement = null;
     try {
       await _postGenerateStream(payload, timeoutMs, (newAd) => {
-        if (!replacement) replacement = newAd;
+        const actualSource = _actualAdSource(newAd);
+        if (state.imageSource === "ai" && actualSource === "none") return;
+        if (!replacement) replacement = { ...newAd, source: actualSource };
       });
     } catch (err) {
       console.warn("[regen] stream failed", err);
@@ -962,11 +998,13 @@ async function regenAd(index) {
 
     if (!replacement) {
       const ads = await _postGenerateBatch(payload, timeoutMs);
-      replacement = ads[0] || null;
+      replacement = ads
+        .map(newAd => ({ ...newAd, source: _actualAdSource(newAd) }))
+        .find(newAd => !(state.imageSource === "ai" && newAd.source === "none")) || null;
     }
 
+    if (state.imageSource === "ai" && !replacement) throw _aiBackgroundUnavailableError();
     if (!replacement) throw new Error("Aucun visuel généré.");
-    replacement.source = replacement.used_source ?? state.imageSource;
     replacement.variant = ad.variant;
     state.ads[index] = replacement;
     const newCard = _buildAdCard(replacement, index);
@@ -988,6 +1026,7 @@ function renderAds(ads) {
   grid.innerHTML = "";
   ads.forEach((ad, i) => grid.appendChild(_buildAdCard(ad, i)));
   applyMockClasses();
+  updateHistoryLayout();
 }
 
 function _slugBrand() {
@@ -1071,7 +1110,11 @@ function pushHistory(ads, config) {
 
 function renderHistory() {
   const section = $("#history-section");
-  if (!state.history.length) { section.style.display = "none"; return; }
+  if (!state.history.length) {
+    section.style.display = "none";
+    updateHistoryLayout();
+    return;
+  }
   section.style.display = "block";
 
   const list = $("#history-list");
@@ -1092,6 +1135,17 @@ function renderHistory() {
       <button class="btn btn-secondary btn-sm" onclick="restoreSession(${si})">Restaurer</button>`;
     list.appendChild(row);
   });
+  updateHistoryLayout();
+}
+
+function updateHistoryLayout() {
+  const layout = $("#results-layout");
+  const section = $("#history-section");
+  if (!layout || !section) return;
+  const lastAd = state.ads[state.ads.length - 1];
+  const inline = !!(lastAd && lastAd.format === "story" && state.history.length);
+  layout.classList.toggle("history-inline", inline);
+  section.style.gridRow = inline ? String(Math.max(state.ads.length, 1)) : "";
 }
 
 function restoreSession(index) {
@@ -1100,6 +1154,7 @@ function restoreSession(index) {
   renderAds(state.ads);
   $("#btn-download-all").style.display = state.ads.length > 1 ? "inline-flex" : "none";
   showPage("generate");
+  updateHistoryLayout();
 }
 
 // ---------------------------------------------------------------------------
@@ -1134,6 +1189,7 @@ function renderDBHistory(dbAds) {
          class="btn btn-secondary btn-sm">↓</a>`;
     list.appendChild(row);
   });
+  updateHistoryLayout();
 }
 
 // ---------------------------------------------------------------------------
@@ -1551,7 +1607,7 @@ function updateColorPreview() {
   const p = hexToRgb(primary), s = hexToRgb(secondary);
   if (!p || !s) return;
 
-  const ctaText = relativeLuminance(s) > 0.25 ? "#111111" : "#ffffff";
+  const ctaText = contrastRatio(secondary, "#111111") >= contrastRatio(secondary, "#ffffff") ? "#111111" : "#ffffff";
   const fontCss = getFontCss();
   const isLight = _currentTheme() === "light";
   const previewBase = isLight ? "#ffffff" : "#07060d";
