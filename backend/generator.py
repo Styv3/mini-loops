@@ -171,13 +171,35 @@ def _load_font(size: int, custom_path: str | None = None):
         return ImageFont.load_default()
 
 
+def _text_width(text: str, font, draw: ImageDraw) -> int:
+    bbox = draw.textbbox((0, 0), text, font=font)
+    return bbox[2] - bbox[0]
+
+
+def _split_long_word(word: str, font, max_width: int, draw: ImageDraw) -> list[str]:
+    if _text_width(word, font, draw) <= max_width:
+        return [word]
+    parts, current = [], ""
+    for char in word:
+        test = current + char
+        if current and _text_width(test, font, draw) > max_width:
+            parts.append(current)
+            current = char
+        else:
+            current = test
+    if current:
+        parts.append(current)
+    return parts
+
+
 def _wrap_text(text: str, font, max_width: int, draw: ImageDraw) -> list[str]:
-    words = text.split()
+    words = []
+    for word in text.split():
+        words.extend(_split_long_word(word, font, max_width, draw))
     lines, current = [], ""
     for word in words:
         test = (current + " " + word).strip()
-        bbox = draw.textbbox((0, 0), test, font=font)
-        if bbox[2] > max_width and current:
+        if _text_width(test, font, draw) > max_width and current:
             lines.append(current)
             current = word
         else:
@@ -214,11 +236,10 @@ def _fit_full_text_block(text: str, base_size: int, custom_path: str | None, max
 
 
 def _fit_single_line_font(text: str, base_size: int, custom_path: str | None, max_width: int, draw: ImageDraw) -> ImageFont.ImageFont:
-    min_size = max(7, int(base_size * 0.45))
+    min_size = 2
     for size in range(max(8, base_size), min_size - 1, -1):
         font = _load_font(size, custom_path)
-        bbox = draw.textbbox((0, 0), text, font=font)
-        if bbox[2] - bbox[0] <= max_width:
+        if _text_width(text, font, draw) <= max_width:
             return font
     return _load_font(min_size, custom_path)
 
@@ -598,21 +619,20 @@ def _photo_overlay(bg, w, h, brand, tagline, desc, cta, primary, secondary, cf=N
     white = (245, 245, 245)
 
     # Brand name — top left
-    font_brand = _load_font(int(h * 0.042), cf)
+    font_brand = _fit_single_line_font(brand.upper(), int(h * 0.042), cf, w - pad * 2, draw)
     draw.text((pad, int(h * 0.07)), brand.upper(), font=font_brand, fill=white)
 
     # Accent line
     draw.rectangle([(pad, int(h * 0.13)), (pad + 50, int(h * 0.133))], fill=secondary)
 
     # Tagline — large, center-bottom area
-    font_tag = _load_font(int(h * 0.062), cf)
-    lines = _wrap_text(tagline, font_tag, w - pad * 2, draw)
     y = int(h * 0.52)
+    font_tag, lines, tag_step = _fit_full_text_block(tagline, int(h * 0.062), cf, w - pad * 2, draw, int(h * 0.22))
     for line in lines:
         # Subtle shadow
         draw.text((pad + 2, y + 2), line, font=font_tag, fill=(0, 0, 0, 120))
         draw.text((pad, y), line, font=font_tag, fill=white)
-        y += int(h * 0.075)
+        y += tag_step
 
     # CTA button
     btn_w, btn_h = int(w * 0.52), int(h * 0.072)
@@ -643,7 +663,7 @@ def _photo_split(bg, w, h, brand, tagline, desc, cta, primary, secondary, cf=Non
     pad = int(w * 0.05)
 
     # Brand
-    font_brand = _load_font(int(h * 0.050), cf)
+    font_brand = _fit_single_line_font(brand.upper(), int(h * 0.050), cf, half - pad * 2, draw)
     draw.text((pad, int(h * 0.10)), brand.upper(), font=font_brand, fill=secondary)
 
     # Divider
@@ -651,12 +671,11 @@ def _photo_split(bg, w, h, brand, tagline, desc, cta, primary, secondary, cf=Non
     draw.rectangle([(pad, dy), (pad + 40, dy + 3)], fill=text_color)
 
     # Tagline
-    font_tag = _load_font(int(h * 0.042), cf)
-    lines = _wrap_text(tagline, font_tag, half - pad * 2, draw)
     y = int(h * 0.25)
+    font_tag, lines, tag_step = _fit_full_text_block(tagline, int(h * 0.042), cf, half - pad * 2, draw, int(h * 0.30))
     for line in lines:
         draw.text((pad, y), line, font=font_tag, fill=text_color)
-        y += int(h * 0.057)
+        y += tag_step
 
     # CTA
     btn_w, btn_h = int(half - pad * 1.15), int(h * 0.072)
@@ -704,15 +723,14 @@ def _photo_frame(bg, w, h, brand, tagline, desc, cta, primary, secondary, cf=Non
     inner_pad = int(w * 0.14)
     inner_w = w - inner_pad * 2
 
-    font_brand = _load_font(int(h * 0.046), cf)
+    font_brand = _fit_single_line_font(brand.upper(), int(h * 0.046), cf, inner_w, draw)
     draw.text((w // 2, pad_y + int(h * 0.09)), brand.upper(), font=font_brand, fill=secondary, anchor="mm")
 
-    font_tag = _load_font(int(h * 0.040), cf)
-    lines = _wrap_text(tagline, font_tag, inner_w, draw)
     y = pad_y + int(h * 0.20)
+    font_tag, lines, tag_step = _fit_full_text_block(tagline, int(h * 0.040), cf, inner_w, draw, int(h * 0.24))
     for line in lines:
         draw.text((w // 2, y), line, font=font_tag, fill=white, anchor="mm")
-        y += int(h * 0.056)
+        y += tag_step
 
     btn_w, btn_h = int(card_w * 0.65), int(h * 0.072)
     bx = (w - btn_w) // 2
@@ -757,16 +775,15 @@ def _layout_centered(draw, w, h, brand, tagline, desc, cta, primary, secondary, 
     draw.rectangle([(pad, line_y), (pad + int(w * 0.06), line_y + 3)], fill=secondary)
 
     # Brand name — small caps, accent color
-    font_brand = _load_font(int(h * 0.040), cf)
+    font_brand = _fit_single_line_font(brand.upper(), int(h * 0.040), cf, w - pad * 2, draw)
     draw.text((pad, line_y - int(h * 0.055)), brand.upper(), font=font_brand, fill=secondary)
 
     # Tagline — large, high contrast
-    font_tag = _load_font(int(h * 0.062), cf)
-    lines = _wrap_text(tagline, font_tag, w - pad * 2, draw)
     y = int(h * 0.26)
+    font_tag, lines, tag_step = _fit_full_text_block(tagline, int(h * 0.062), cf, w - pad * 2, draw, int(h * 0.29))
     for line in lines:
         draw.text((pad, y), line, font=font_tag, fill=text_color)
-        y += int(h * 0.078)
+        y += tag_step
 
     # CTA pill button
     btn_w, btn_h = int(w * 0.58), int(h * 0.076)
@@ -802,7 +819,7 @@ def _layout_split(draw, img, w, h, brand, tagline, desc, cta, primary, secondary
     draw.polygon(points, fill=secondary)
 
     # Left: brand name — big
-    font_brand = _load_font(int(h * 0.065), cf)
+    font_brand = _fit_single_line_font(brand.upper(), int(h * 0.065), cf, half - pad * 2, draw)
     draw.text((pad, int(h * 0.10)), brand.upper(), font=font_brand, fill=text_left)
 
     # Left: accent separator
@@ -822,12 +839,12 @@ def _layout_split(draw, img, w, h, brand, tagline, desc, cta, primary, secondary
     _draw_cta_button(draw, (bx, by, bx + btn_w, by + btn_h), cta.upper(), int(h * 0.032), cf, text_left, primary, 6, pad_ratio=0.08)
 
     # Right: tagline — large
-    font_tag = _load_font(int(h * 0.056), cf)
-    tag_lines = _wrap_text(tagline, font_tag, half - pad * 2 - int(w * 0.04), draw)
     y_tag = int(h * 0.18)
+    tag_w = half - pad * 2 - int(w * 0.04)
+    font_tag, tag_lines, tag_step = _fit_full_text_block(tagline, int(h * 0.056), cf, tag_w, draw, int(h * 0.46))
     for line in tag_lines:
         draw.text((half + pad + int(w * 0.02), y_tag), line, font=font_tag, fill=text_right)
-        y_tag += int(h * 0.07)
+        y_tag += tag_step
 
     # Right: decorative dots
     for i in range(3):
@@ -853,16 +870,15 @@ def _layout_bold(draw, w, h, brand, tagline, desc, cta, primary, secondary, cf=N
     draw.polygon([(0, band_h), (w, band_h - int(h * 0.06)), (w, band_h), (0, band_h)], fill=secondary)
 
     # Brand name in band — large, centered
-    font_brand = _load_font(int(h * 0.090), cf)
+    font_brand = _fit_single_line_font(brand.upper(), int(h * 0.090), cf, w - pad * 2, draw)
     draw.text((w // 2, int(band_h * 0.52)), brand.upper(), font=font_brand, fill=block_text, anchor="mm")
 
     # Tagline
-    font_tag = _load_font(int(h * 0.052), cf)
-    tag_lines = _wrap_text(tagline, font_tag, w - pad * 2, draw)
     y = int(h * 0.40)
+    font_tag, tag_lines, tag_step = _fit_full_text_block(tagline, int(h * 0.052), cf, w - pad * 2, draw, int(h * 0.23))
     for line in tag_lines:
         draw.text((pad, y), line, font=font_tag, fill=text_color)
-        y += int(h * 0.066)
+        y += tag_step
 
     # CTA — wide, rounded rect
     btn_w, btn_h = int(w * 0.82), int(h * 0.082)
@@ -917,7 +933,7 @@ def _layout_glass(draw, img, w, h, brand, tagline, desc, cta, primary, secondary
     inner_w = w - inner_pad * 2
 
     # Brand name — centered, large, accent color
-    font_brand = _load_font(int(h * 0.072), cf)
+    font_brand = _fit_single_line_font(brand.upper(), int(h * 0.072), cf, inner_w, draw)
     draw.text((w // 2, card_y1 + int(h * 0.085)), brand.upper(),
               font=font_brand, fill=secondary, anchor="mm")
 
@@ -927,12 +943,11 @@ def _layout_glass(draw, img, w, h, brand, tagline, desc, cta, primary, secondary
                    fill=_blend(text_color, primary, 0.4))
 
     # Tagline — centered
-    font_tag = _load_font(int(h * 0.046), cf)
-    lines = _wrap_text(tagline, font_tag, inner_w, draw)
     y = card_y1 + int(h * 0.195)
+    font_tag, lines, tag_step = _fit_full_text_block(tagline, int(h * 0.046), cf, inner_w, draw, int(h * 0.30))
     for line in lines:
         draw.text((w // 2, y), line, font=font_tag, fill=text_color, anchor="mm")
-        y += int(h * 0.063)
+        y += tag_step
 
     # CTA button
     btn_w, btn_h = int(inner_w * 0.78), int(h * 0.074)
